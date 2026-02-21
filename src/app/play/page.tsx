@@ -3,11 +3,16 @@
 import { createClient } from '@/lib/supabase/client'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 type Match = {
   id: number
-  team1: { name: string; code: string; flag_url: string }
-  team2: { name: string; code: string; flag_url: string }
+  team1: { name: string; code: string; flag_url: string } | null
+  team2: { name: string; code: string; flag_url: string } | null
   phase: string
   match_date: string
   team1_score: number | null
@@ -21,37 +26,47 @@ type Prediction = {
   team2_score: number
 }
 
+// Flag emoji mapping
+const flagEmojis: Record<string, string> = {
+  MEX: '🇲🇽', CAN: '🇨🇦', USA: '🇺🇸', ARG: '🇦🇷', BRA: '🇧🇷', CHI: '🇨🇱',
+  COL: '🇨🇴', ECU: '🇪🇨', PER: '🇵🇪', URU: '🇺🇾', VEN: '🇻🇪', PAR: '🇵🇾',
+  BOL: '🇧🇴', ESP: '🇪🇸', POR: '🇵🇹', FRA: '🇫🇷', GER: '🇩🇪', ENG: '🏴󠁧󠁢󠁥󠁮󠁧󠁿',
+  ITA: '🇮🇹', NED: '🇳🇱', BEL: '🇧🇪', CRO: '🇭🇷', SRB: '🇷🇸', SUI: '🇨🇭',
+  DEN: '🇩🇰', AUT: '🇦🇹', POL: '🇵🇱', UKR: '🇺🇦', WAL: '🏴󠁧󠁢󠁷󠁬󠁳󠁿', CZE: '🇨🇿',
+  SWE: '🇸🇪', NOR: '🇳🇴', SCO: '🏴󠁧󠁢󠁳󠁣󠁴󠁿', IRL: '🇮🇪', JPN: '🇯🇵', KOR: '🇰🇷',
+  AUS: '🇦🇺', KSA: '🇸🇦', IRN: '🇮🇷', QAT: '🇶🇦', SEN: '🇸🇳', MAR: '🇲🇦',
+  NGA: '🇳🇬', CMR: '🇨🇲', GHA: '🇬🇭', CIV: '🇨🇮', EGY: '🇪🇬', TUN: '🇹🇳',
+}
+
 export default function PlayPage() {
   const [matches, setMatches] = useState<Match[]>([])
   const [predictions, setPredictions] = useState<Record<number, Prediction>>({})
+  const [localPredictions, setLocalPredictions] = useState<Record<number, { team1: string; team2: string }>>({})
   const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState<number | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [savedCount, setSavedCount] = useState(0)
   const supabase = createClient()
 
   useEffect(() => {
-    loadMatches()
-    loadPredictions()
+    loadData()
   }, [])
 
+  async function loadData() {
+    await Promise.all([loadMatches(), loadPredictions()])
+    setLoading(false)
+  }
+
   async function loadMatches() {
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from('matches')
       .select(`
-        id,
-        phase,
-        match_date,
-        team1_score,
-        team2_score,
-        status,
+        id, phase, match_date, team1_score, team2_score, status,
         team1:teams!matches_team1_id_fkey(name, code, flag_url),
         team2:teams!matches_team2_id_fkey(name, code, flag_url)
       `)
       .order('match_date', { ascending: true })
 
-    if (data) {
-      setMatches(data as unknown as Match[])
-    }
-    setLoading(false)
+    if (data) setMatches(data as unknown as Match[])
   }
 
   async function loadPredictions() {
@@ -65,52 +80,75 @@ export default function PlayPage() {
 
     if (data) {
       const predMap: Record<number, Prediction> = {}
+      const localMap: Record<number, { team1: string; team2: string }> = {}
       data.forEach(p => {
         predMap[p.match_id] = p
+        localMap[p.match_id] = { 
+          team1: p.team1_score.toString(), 
+          team2: p.team2_score.toString() 
+        }
       })
       setPredictions(predMap)
+      setLocalPredictions(localMap)
     }
   }
 
-  async function savePrediction(matchId: number, team1Score: number, team2Score: number) {
-    setSaving(matchId)
+  function updateLocalPrediction(matchId: number, team: 'team1' | 'team2', value: string) {
+    // Only allow numbers 0-9
+    if (value !== '' && !/^\d$/.test(value)) return
+    
+    setLocalPredictions(prev => ({
+      ...prev,
+      [matchId]: {
+        ...prev[matchId],
+        [team]: value
+      }
+    }))
+  }
+
+  async function saveAllPredictions() {
+    setSaving(true)
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
 
-    const { error } = await supabase
-      .from('predictions')
-      .upsert({
-        user_id: user.id,
-        match_id: matchId,
-        team1_score: team1Score,
-        team2_score: team2Score,
-        updated_at: new Date().toISOString()
-      }, {
-        onConflict: 'user_id,match_id'
-      })
-
-    if (!error) {
-      setPredictions(prev => ({
-        ...prev,
-        [matchId]: { match_id: matchId, team1_score: team1Score, team2_score: team2Score }
-      }))
+    let saved = 0
+    for (const [matchId, pred] of Object.entries(localPredictions)) {
+      if (pred.team1 !== '' && pred.team2 !== '') {
+        const match = matches.find(m => m.id === parseInt(matchId))
+        if (match && canPredict(match.match_date)) {
+          const { error } = await supabase
+            .from('predictions')
+            .upsert({
+              user_id: user.id,
+              match_id: parseInt(matchId),
+              team1_score: parseInt(pred.team1),
+              team2_score: parseInt(pred.team2),
+              updated_at: new Date().toISOString()
+            }, { onConflict: 'user_id,match_id' })
+          
+          if (!error) saved++
+        }
+      }
     }
-    setSaving(null)
+    
+    setSavedCount(saved)
+    setTimeout(() => setSavedCount(0), 3000)
+    await loadPredictions()
+    setSaving(false)
   }
 
   function canPredict(matchDate: string) {
     const matchTime = new Date(matchDate).getTime()
     const now = Date.now()
-    const fiveMinutes = 5 * 60 * 1000
-    return matchTime - now > fiveMinutes
+    return matchTime - now > 5 * 60 * 1000 // 5 minutes before
   }
 
   function formatDate(dateStr: string) {
     const date = new Date(dateStr)
     return date.toLocaleDateString('es-CL', { 
       weekday: 'short', 
-      month: 'short', 
       day: 'numeric',
+      month: 'short',
       hour: '2-digit',
       minute: '2-digit'
     })
@@ -119,20 +157,42 @@ export default function PlayPage() {
   function getPhaseLabel(phase: string) {
     const labels: Record<string, string> = {
       groups: 'Fase de Grupos',
-      round32: '32avos de Final',
-      round16: '16avos de Final',
-      quarters: 'Cuartos de Final',
+      round32: '32avos',
+      round16: '16avos',
+      quarters: 'Cuartos',
       semis: 'Semifinales',
-      third: 'Tercer Lugar',
+      third: '3er Lugar',
       final: 'Final'
     }
     return labels[phase] || phase
   }
 
+  function getMaxPoints(phase: string) {
+    const points: Record<string, number> = {
+      groups: 12, round32: 13, round16: 13,
+      quarters: 15, semis: 17, third: 17, final: 17
+    }
+    return points[phase] || 12
+  }
+
+  function getFlag(code: string | undefined) {
+    if (!code) return '🏳️'
+    return flagEmojis[code] || '🏳️'
+  }
+
+  // Group matches by phase
+  const matchesByPhase = matches.reduce((acc, match) => {
+    if (!acc[match.phase]) acc[match.phase] = []
+    acc[match.phase].push(match)
+    return acc
+  }, {} as Record<string, Match[]>)
+
+  const phases = Object.keys(matchesByPhase)
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-900 via-green-800 to-emerald-900 flex items-center justify-center">
-        <div className="text-white text-xl">Cargando partidos...</div>
+        <div className="text-white text-xl animate-pulse">Cargando partidos...</div>
       </div>
     )
   }
@@ -140,109 +200,146 @@ export default function PlayPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-900 via-green-800 to-emerald-900">
       {/* Header */}
-      <header className="p-4 flex justify-between items-center border-b border-white/10">
-        <Link href="/" className="text-2xl font-bold text-white">⚽ El Futbolero</Link>
-        <nav className="flex gap-4">
-          <Link href="/leaderboard" className="text-green-200 hover:text-white">Ranking</Link>
-          <Link href="/leagues" className="text-green-200 hover:text-white">Ligas</Link>
-        </nav>
+      <header className="sticky top-0 z-50 bg-green-900/95 backdrop-blur border-b border-white/10">
+        <div className="container mx-auto px-4 py-3 flex justify-between items-center">
+          <Link href="/" className="text-xl font-bold text-white">⚽ El Futbolero</Link>
+          <nav className="flex gap-4 text-sm">
+            <Link href="/leaderboard" className="text-green-200 hover:text-white">Ranking</Link>
+            <Link href="/leagues" className="text-green-200 hover:text-white">Ligas</Link>
+          </nav>
+        </div>
       </header>
 
-      <main className="container mx-auto px-4 py-8 max-w-2xl">
-        <h1 className="text-3xl font-bold text-white mb-8 text-center">🎮 Ingresa tus Pronósticos</h1>
+      <main className="container mx-auto px-4 py-6 max-w-6xl">
+        {/* Save Button - Sticky */}
+        <div className="sticky top-16 z-40 mb-6">
+          <div className="flex justify-center">
+            <Button 
+              onClick={saveAllPredictions}
+              disabled={saving}
+              size="lg"
+              className="bg-blue-500 hover:bg-blue-600 text-white font-bold px-8 py-3 rounded-lg shadow-lg"
+            >
+              {saving ? 'Guardando...' : savedCount > 0 ? `✓ ${savedCount} guardados` : 'GUARDAR APUESTAS'}
+            </Button>
+          </div>
+        </div>
 
         {matches.length === 0 ? (
-          <div className="bg-white/10 backdrop-blur rounded-xl p-8 text-center">
-            <p className="text-green-200 text-lg">No hay partidos programados aún.</p>
-            <p className="text-green-200/70 mt-2">Los partidos del Mundial 2026 se cargarán pronto.</p>
-          </div>
+          <Card className="bg-white/10 border-white/20">
+            <CardContent className="p-8 text-center">
+              <p className="text-green-200 text-lg">No hay partidos programados aún</p>
+            </CardContent>
+          </Card>
         ) : (
-          <div className="space-y-4">
-            {matches.map(match => {
-              const prediction = predictions[match.id]
-              const editable = canPredict(match.match_date)
-              
-              return (
-                <div 
-                  key={match.id} 
-                  className={`bg-white/10 backdrop-blur rounded-xl p-4 ${!editable ? 'opacity-60' : ''}`}
+          <Tabs defaultValue={phases[0]} className="w-full">
+            <TabsList className="w-full justify-start mb-6 bg-white/10 overflow-x-auto">
+              {phases.map(phase => (
+                <TabsTrigger 
+                  key={phase} 
+                  value={phase}
+                  className="text-white data-[state=active]:bg-white/20"
                 >
-                  <div className="text-xs text-green-300 mb-2 flex justify-between">
-                    <span>{getPhaseLabel(match.phase)}</span>
-                    <span>{formatDate(match.match_date)}</span>
-                  </div>
-                  
-                  <div className="flex items-center justify-between gap-4">
-                    {/* Team 1 */}
-                    <div className="flex-1 text-right">
-                      <span className="text-white font-semibold">{match.team1?.name || 'TBD'}</span>
-                      <span className="text-green-300 text-sm ml-2">{match.team1?.code || '???'}</span>
-                    </div>
-                    
-                    {/* Score Input */}
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="number"
-                        min="0"
-                        max="20"
-                        value={prediction?.team1_score ?? ''}
-                        onChange={(e) => {
-                          const val = parseInt(e.target.value) || 0
-                          if (editable && prediction) {
-                            savePrediction(match.id, val, prediction.team2_score)
-                          } else if (editable) {
-                            savePrediction(match.id, val, 0)
-                          }
-                        }}
-                        disabled={!editable}
-                        className="w-12 h-12 text-center text-xl font-bold bg-white/20 border border-white/30 rounded-lg text-white disabled:opacity-50"
-                        placeholder="-"
-                      />
-                      <span className="text-white text-xl">-</span>
-                      <input
-                        type="number"
-                        min="0"
-                        max="20"
-                        value={prediction?.team2_score ?? ''}
-                        onChange={(e) => {
-                          const val = parseInt(e.target.value) || 0
-                          if (editable && prediction) {
-                            savePrediction(match.id, prediction.team1_score, val)
-                          } else if (editable) {
-                            savePrediction(match.id, 0, val)
-                          }
-                        }}
-                        disabled={!editable}
-                        className="w-12 h-12 text-center text-xl font-bold bg-white/20 border border-white/30 rounded-lg text-white disabled:opacity-50"
-                        placeholder="-"
-                      />
-                    </div>
-                    
-                    {/* Team 2 */}
-                    <div className="flex-1 text-left">
-                      <span className="text-green-300 text-sm mr-2">{match.team2?.code || '???'}</span>
-                      <span className="text-white font-semibold">{match.team2?.name || 'TBD'}</span>
-                    </div>
-                  </div>
+                  {getPhaseLabel(phase)}
+                </TabsTrigger>
+              ))}
+            </TabsList>
 
-                  {/* Status */}
-                  <div className="mt-2 text-center">
-                    {saving === match.id && (
-                      <span className="text-yellow-400 text-xs">Guardando...</span>
-                    )}
-                    {!editable && match.status === 'finished' && (
-                      <span className="text-green-400 text-xs">
-                        Resultado: {match.team1_score} - {match.team2_score}
-                      </span>
-                    )}
-                    {!editable && match.status !== 'finished' && (
-                      <span className="text-red-400 text-xs">Cerrado</span>
-                    )}
-                  </div>
+            {phases.map(phase => (
+              <TabsContent key={phase} value={phase}>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {matchesByPhase[phase].map(match => {
+                    const editable = canPredict(match.match_date)
+                    const local = localPredictions[match.id] || { team1: '', team2: '' }
+                    const hasPrediction = local.team1 !== '' && local.team2 !== ''
+                    
+                    return (
+                      <Card 
+                        key={match.id} 
+                        className={`bg-white/10 border-white/20 ${!editable ? 'opacity-60' : ''}`}
+                      >
+                        <CardHeader className="pb-2">
+                          <div className="flex justify-between items-center">
+                            <CardTitle className="text-sm text-green-300">
+                              {getPhaseLabel(match.phase)}
+                            </CardTitle>
+                            {!editable && (
+                              <Badge variant="outline" className="text-red-400 border-red-400">
+                                Cerrado
+                              </Badge>
+                            )}
+                            {editable && hasPrediction && (
+                              <Badge variant="outline" className="text-green-400 border-green-400">
+                                ✓
+                              </Badge>
+                            )}
+                          </div>
+                          <p className="text-xs text-white/50">{formatDate(match.match_date)}</p>
+                        </CardHeader>
+                        
+                        <CardContent className="space-y-3">
+                          {/* Team 1 */}
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 flex-1 min-w-0">
+                              <span className="text-2xl">{getFlag(match.team1?.code)}</span>
+                              <span className="text-white font-medium truncate">
+                                {match.team1?.name || 'TBD'}
+                              </span>
+                            </div>
+                            <Input
+                              type="text"
+                              inputMode="numeric"
+                              maxLength={1}
+                              value={local.team1}
+                              onChange={(e) => updateLocalPrediction(match.id, 'team1', e.target.value)}
+                              disabled={!editable}
+                              className="w-12 h-12 text-center text-xl font-bold bg-white/20 border-white/30 text-white"
+                              placeholder="-"
+                            />
+                          </div>
+
+                          {/* Team 2 */}
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 flex-1 min-w-0">
+                              <span className="text-2xl">{getFlag(match.team2?.code)}</span>
+                              <span className="text-white font-medium truncate">
+                                {match.team2?.name || 'TBD'}
+                              </span>
+                            </div>
+                            <Input
+                              type="text"
+                              inputMode="numeric"
+                              maxLength={1}
+                              value={local.team2}
+                              onChange={(e) => updateLocalPrediction(match.id, 'team2', e.target.value)}
+                              disabled={!editable}
+                              className="w-12 h-12 text-center text-xl font-bold bg-white/20 border-white/30 text-white"
+                              placeholder="-"
+                            />
+                          </div>
+
+                          {/* Points Info */}
+                          <div className="flex justify-between text-xs pt-2 border-t border-white/10">
+                            <span className="text-white/50">Resultado final</span>
+                            <span className="text-white/50">
+                              Puntaje máx: <span className="text-green-400 font-bold">{getMaxPoints(match.phase)}</span>
+                            </span>
+                          </div>
+
+                          {/* Show actual result if finished */}
+                          {match.status === 'finished' && (
+                            <div className="text-center text-green-400 font-bold">
+                              Resultado: {match.team1_score} - {match.team2_score}
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    )
+                  })}
                 </div>
-              )
-            })}
-          </div>
+              </TabsContent>
+            ))}
+          </Tabs>
         )}
       </main>
     </div>
