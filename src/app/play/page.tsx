@@ -3,10 +3,6 @@
 import { createClient } from '@/lib/supabase/client'
 import { useEffect, useState, useRef, useCallback } from 'react'
 import Link from 'next/link'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { Badge } from '@/components/ui/badge'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 type Match = {
   id: number
@@ -45,6 +41,7 @@ export default function PlayPage() {
   const [localPredictions, setLocalPredictions] = useState<Record<number, { team1: string; team2: string }>>({})
   const [saveStatus, setSaveStatus] = useState<Record<number, SaveStatus>>({})
   const [loading, setLoading] = useState(true)
+  const [activePhase, setActivePhase] = useState<string>('')
   const supabase = createClient()
   const debounceTimers = useRef<Record<number, NodeJS.Timeout>>({})
 
@@ -67,7 +64,12 @@ export default function PlayPage() {
       `)
       .order('match_date', { ascending: true })
 
-    if (data) setMatches(data as unknown as Match[])
+    if (data) {
+      setMatches(data as unknown as Match[])
+      if (data.length > 0 && !activePhase) {
+        setActivePhase(data[0].phase)
+      }
+    }
   }
 
   async function loadPredictions() {
@@ -121,7 +123,6 @@ export default function PlayPage() {
       setSaveStatus(prev => ({ ...prev, [matchId]: 'error' }))
     } else {
       setSaveStatus(prev => ({ ...prev, [matchId]: 'saved' }))
-      // Reset to idle after 2 seconds
       setTimeout(() => {
         setSaveStatus(prev => ({ ...prev, [matchId]: 'idle' }))
       }, 2000)
@@ -129,7 +130,6 @@ export default function PlayPage() {
   }, [matches, supabase])
 
   function updateLocalPrediction(matchId: number, team: 'team1' | 'team2', value: string) {
-    // Only allow numbers 0-9
     if (value !== '' && !/^\d$/.test(value)) return
     
     const newLocal = {
@@ -142,12 +142,10 @@ export default function PlayPage() {
       [matchId]: newLocal
     }))
 
-    // Clear existing timer for this match
     if (debounceTimers.current[matchId]) {
       clearTimeout(debounceTimers.current[matchId])
     }
 
-    // Auto-save with debounce when both fields have values
     const team1Val = team === 'team1' ? value : newLocal.team1
     const team2Val = team === 'team2' ? value : newLocal.team2
     
@@ -161,7 +159,7 @@ export default function PlayPage() {
   function canPredict(matchDate: string) {
     const matchTime = new Date(matchDate).getTime()
     const now = Date.now()
-    return matchTime - now > 5 * 60 * 1000 // 5 minutes before
+    return matchTime - now > 5 * 60 * 1000
   }
 
   function formatDate(dateStr: string) {
@@ -177,12 +175,12 @@ export default function PlayPage() {
 
   function getPhaseLabel(phase: string) {
     const labels: Record<string, string> = {
-      groups: 'Fase de Grupos',
+      groups: 'Grupos',
       round32: '32avos',
       round16: '16avos',
       quarters: 'Cuartos',
-      semis: 'Semifinales',
-      third: '3er Lugar',
+      semis: 'Semis',
+      third: '3°',
       final: 'Final'
     }
     return labels[phase] || phase
@@ -201,7 +199,6 @@ export default function PlayPage() {
     return flagEmojis[code] || '🏳️'
   }
 
-  // Group matches by phase
   const matchesByPhase = matches.reduce((acc, match) => {
     if (!acc[match.phase]) acc[match.phase] = []
     acc[match.phase].push(match)
@@ -212,161 +209,156 @@ export default function PlayPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-green-900 via-green-800 to-emerald-900 flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center">
         <div className="text-white text-xl animate-pulse">Cargando partidos...</div>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-green-900 via-green-800 to-emerald-900">
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 overflow-hidden">
+      {/* Animated background elements */}
+      <div className="fixed inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute -top-40 -right-40 w-96 h-96 bg-emerald-500/20 rounded-full blur-3xl" />
+        <div className="absolute top-1/2 -left-40 w-80 h-80 bg-blue-500/20 rounded-full blur-3xl" />
+        <div className="absolute -bottom-40 right-1/3 w-72 h-72 bg-purple-500/20 rounded-full blur-3xl" />
+      </div>
+
       {/* Header */}
-      <header className="sticky top-0 z-50 bg-green-900/95 backdrop-blur border-b border-white/10">
-        <div className="container mx-auto px-4 py-3 flex justify-between items-center">
-          <Link href="/" className="text-xl font-bold text-white">⚽ El Futbolero</Link>
-          <nav className="flex gap-4 text-sm">
-            <Link href="/leaderboard" className="text-green-200 hover:text-white">Ranking</Link>
-            <Link href="/leagues" className="text-green-200 hover:text-white">Ligas</Link>
+      <header className="sticky top-0 z-50 bg-slate-950/80 backdrop-blur-xl border-b border-white/5">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex justify-between items-center">
+          <Link href="/" className="flex items-center gap-3">
+            <span className="text-2xl">⚽</span>
+            <span className="text-lg font-bold text-white tracking-tight hidden sm:block">El Futbolero</span>
+          </Link>
+          <nav className="flex gap-4 sm:gap-6 text-sm">
+            <Link href="/leaderboard" className="text-slate-400 hover:text-white transition-colors">Ranking</Link>
+            <Link href="/leagues" className="text-slate-400 hover:text-white transition-colors">Ligas</Link>
           </nav>
         </div>
       </header>
 
-      <main className="container mx-auto px-4 py-6 max-w-6xl">
-        {/* Auto-save notice */}
-        <div className="text-center mb-4">
-          <span className="text-green-300/70 text-sm">💾 Los resultados se guardan automáticamente</span>
+      <main className="relative z-10 container mx-auto px-4 py-6 max-w-6xl">
+        {/* Title & auto-save notice */}
+        <div className="text-center mb-6">
+          <h1 className="text-3xl font-bold text-white mb-2">Predicciones</h1>
+          <span className="text-emerald-400/70 text-sm">💾 Guardado automático</span>
         </div>
 
-        {matches.length === 0 ? (
-          <Card className="bg-white/10 border-white/20">
-            <CardContent className="p-8 text-center">
-              <p className="text-green-200 text-lg">No hay partidos programados aún</p>
-            </CardContent>
-          </Card>
-        ) : (
-          <Tabs defaultValue={phases[0]} className="w-full">
-            <TabsList className="w-full justify-start mb-6 bg-white/10 overflow-x-auto">
-              {phases.map(phase => (
-                <TabsTrigger 
-                  key={phase} 
-                  value={phase}
-                  className="text-white data-[state=active]:bg-white/20"
-                >
-                  {getPhaseLabel(phase)}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-
+        {/* Phase tabs */}
+        {phases.length > 0 && (
+          <div className="flex gap-2 mb-6 overflow-x-auto pb-2 scrollbar-hide">
             {phases.map(phase => (
-              <TabsContent key={phase} value={phase}>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {matchesByPhase[phase].map(match => {
-                    const editable = canPredict(match.match_date)
-                    const local = localPredictions[match.id] || { team1: '', team2: '' }
-                    const hasPrediction = local.team1 !== '' && local.team2 !== ''
-                    
-                    return (
-                      <Card 
-                        key={match.id} 
-                        className={`bg-white/10 border-white/20 ${!editable ? 'opacity-60' : ''}`}
-                      >
-                        <CardHeader className="pb-2">
-                          <div className="flex justify-between items-center">
-                            <CardTitle className="text-sm text-green-300">
-                              {getPhaseLabel(match.phase)}
-                            </CardTitle>
-                            {!editable && (
-                              <Badge variant="outline" className="text-red-400 border-red-400">
-                                Cerrado
-                              </Badge>
-                            )}
-                            {editable && saveStatus[match.id] === 'saving' && (
-                              <Badge variant="outline" className="text-yellow-400 border-yellow-400 animate-pulse">
-                                Guardando...
-                              </Badge>
-                            )}
-                            {editable && saveStatus[match.id] === 'saved' && (
-                              <Badge variant="outline" className="text-green-400 border-green-400">
-                                ✓ Guardado
-                              </Badge>
-                            )}
-                            {editable && saveStatus[match.id] === 'error' && (
-                              <Badge variant="outline" className="text-red-400 border-red-400">
-                                Error
-                              </Badge>
-                            )}
-                            {editable && hasPrediction && (!saveStatus[match.id] || saveStatus[match.id] === 'idle') && (
-                              <Badge variant="outline" className="text-green-400 border-green-400">
-                                ✓
-                              </Badge>
-                            )}
-                          </div>
-                          <p className="text-xs text-white/50">{formatDate(match.match_date)}</p>
-                        </CardHeader>
-                        
-                        <CardContent className="space-y-3">
-                          {/* Team 1 */}
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-2 flex-1 min-w-0">
-                              <span className="text-2xl">{getFlag(match.team1?.code)}</span>
-                              <span className="text-white font-medium truncate">
-                                {match.team1?.name || 'TBD'}
-                              </span>
-                            </div>
-                            <Input
-                              type="text"
-                              inputMode="numeric"
-                              maxLength={1}
-                              value={local.team1}
-                              onChange={(e) => updateLocalPrediction(match.id, 'team1', e.target.value)}
-                              disabled={!editable}
-                              className="w-12 h-12 text-center text-xl font-bold bg-white/20 border-white/30 text-white"
-                              placeholder="-"
-                            />
-                          </div>
-
-                          {/* Team 2 */}
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-2 flex-1 min-w-0">
-                              <span className="text-2xl">{getFlag(match.team2?.code)}</span>
-                              <span className="text-white font-medium truncate">
-                                {match.team2?.name || 'TBD'}
-                              </span>
-                            </div>
-                            <Input
-                              type="text"
-                              inputMode="numeric"
-                              maxLength={1}
-                              value={local.team2}
-                              onChange={(e) => updateLocalPrediction(match.id, 'team2', e.target.value)}
-                              disabled={!editable}
-                              className="w-12 h-12 text-center text-xl font-bold bg-white/20 border-white/30 text-white"
-                              placeholder="-"
-                            />
-                          </div>
-
-                          {/* Points Info */}
-                          <div className="flex justify-between text-xs pt-2 border-t border-white/10">
-                            <span className="text-white/50">Resultado final</span>
-                            <span className="text-white/50">
-                              Puntaje máx: <span className="text-green-400 font-bold">{getMaxPoints(match.phase)}</span>
-                            </span>
-                          </div>
-
-                          {/* Show actual result if finished */}
-                          {match.status === 'finished' && (
-                            <div className="text-center text-green-400 font-bold">
-                              Resultado: {match.team1_score} - {match.team2_score}
-                            </div>
-                          )}
-                        </CardContent>
-                      </Card>
-                    )
-                  })}
-                </div>
-              </TabsContent>
+              <button
+                key={phase}
+                onClick={() => setActivePhase(phase)}
+                className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all ${
+                  activePhase === phase 
+                    ? 'bg-emerald-500 text-white' 
+                    : 'bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white'
+                }`}
+              >
+                {getPhaseLabel(phase)}
+              </button>
             ))}
-          </Tabs>
+          </div>
+        )}
+
+        {matches.length === 0 ? (
+          <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-sm border border-white/10 rounded-2xl p-12 text-center">
+            <p className="text-slate-400 text-lg">No hay partidos programados aún</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {matchesByPhase[activePhase]?.map(match => {
+              const editable = canPredict(match.match_date)
+              const local = localPredictions[match.id] || { team1: '', team2: '' }
+              const hasPrediction = local.team1 !== '' && local.team2 !== ''
+              const status = saveStatus[match.id]
+              
+              return (
+                <div 
+                  key={match.id} 
+                  className={`bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-sm border border-white/10 rounded-2xl p-5 transition-all ${
+                    !editable ? 'opacity-50' : 'hover:border-white/20'
+                  }`}
+                >
+                  {/* Header */}
+                  <div className="flex justify-between items-center mb-4">
+                    <span className="text-xs text-slate-500">{formatDate(match.match_date)}</span>
+                    {!editable && (
+                      <span className="text-xs text-red-400 bg-red-400/10 px-2 py-1 rounded-full">Cerrado</span>
+                    )}
+                    {editable && status === 'saving' && (
+                      <span className="text-xs text-yellow-400 bg-yellow-400/10 px-2 py-1 rounded-full animate-pulse">Guardando...</span>
+                    )}
+                    {editable && status === 'saved' && (
+                      <span className="text-xs text-emerald-400 bg-emerald-400/10 px-2 py-1 rounded-full">✓ Guardado</span>
+                    )}
+                    {editable && status === 'error' && (
+                      <span className="text-xs text-red-400 bg-red-400/10 px-2 py-1 rounded-full">Error</span>
+                    )}
+                    {editable && hasPrediction && (!status || status === 'idle') && (
+                      <span className="text-xs text-emerald-400 bg-emerald-400/10 px-2 py-1 rounded-full">✓</span>
+                    )}
+                  </div>
+                  
+                  {/* Team 1 */}
+                  <div className="flex items-center justify-between gap-3 mb-3">
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      <span className="text-2xl">{getFlag(match.team1?.code)}</span>
+                      <span className="text-white font-medium truncate">
+                        {match.team1?.name || 'TBD'}
+                      </span>
+                    </div>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={1}
+                      value={local.team1}
+                      onChange={(e) => updateLocalPrediction(match.id, 'team1', e.target.value)}
+                      disabled={!editable}
+                      className="w-14 h-14 text-center text-2xl font-bold bg-white/10 border border-white/10 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50 disabled:opacity-50"
+                      placeholder="-"
+                    />
+                  </div>
+
+                  {/* Team 2 */}
+                  <div className="flex items-center justify-between gap-3 mb-4">
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      <span className="text-2xl">{getFlag(match.team2?.code)}</span>
+                      <span className="text-white font-medium truncate">
+                        {match.team2?.name || 'TBD'}
+                      </span>
+                    </div>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={1}
+                      value={local.team2}
+                      onChange={(e) => updateLocalPrediction(match.id, 'team2', e.target.value)}
+                      disabled={!editable}
+                      className="w-14 h-14 text-center text-2xl font-bold bg-white/10 border border-white/10 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50 disabled:opacity-50"
+                      placeholder="-"
+                    />
+                  </div>
+
+                  {/* Footer */}
+                  <div className="flex justify-between text-xs pt-3 border-t border-white/5">
+                    <span className="text-slate-500">Puntaje máx</span>
+                    <span className="text-emerald-400 font-semibold">{getMaxPoints(match.phase)} pts</span>
+                  </div>
+
+                  {/* Result if finished */}
+                  {match.status === 'finished' && (
+                    <div className="mt-3 text-center text-emerald-400 font-bold bg-emerald-400/10 rounded-lg py-2">
+                      Resultado: {match.team1_score} - {match.team2_score}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
         )}
       </main>
     </div>

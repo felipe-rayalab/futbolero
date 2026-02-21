@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/client'
 import { useState } from 'react'
+import Link from 'next/link'
 
 export default function LoginPage() {
   const [loading, setLoading] = useState(false)
@@ -22,22 +23,43 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-green-900 via-green-800 to-emerald-900">
-      <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-8 shadow-2xl max-w-md w-full mx-4">
-        <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-white mb-2">⚽ El Futbolero</h1>
-          <p className="text-green-200">Mundial 2026</p>
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 overflow-hidden">
+      {/* Animated background elements */}
+      <div className="fixed inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute -top-40 -right-40 w-96 h-96 bg-emerald-500/20 rounded-full blur-3xl" />
+        <div className="absolute top-1/2 -left-40 w-80 h-80 bg-blue-500/20 rounded-full blur-3xl" />
+        <div className="absolute -bottom-40 right-1/3 w-72 h-72 bg-purple-500/20 rounded-full blur-3xl" />
+      </div>
+
+      {/* Back button */}
+      <Link 
+        href="/" 
+        className="absolute top-6 left-6 text-slate-400 hover:text-white flex items-center gap-2 transition-colors z-10"
+      >
+        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+        </svg>
+        <span>Volver</span>
+      </Link>
+
+      <div className="relative z-10 bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-xl border border-white/10 rounded-3xl p-10 shadow-2xl max-w-md w-full mx-4">
+        <div className="text-center mb-10">
+          <div className="flex items-center justify-center gap-3 mb-4">
+            <span className="text-5xl">⚽</span>
+          </div>
+          <h1 className="text-3xl font-bold text-white mb-2">El Futbolero</h1>
+          <p className="text-slate-400">Mundial 2026</p>
         </div>
 
         <div className="space-y-4">
           <button
             onClick={handleGoogleLogin}
             disabled={loading}
-            className="w-full flex items-center justify-center gap-3 bg-white text-gray-800 font-semibold py-3 px-4 rounded-lg hover:bg-gray-100 transition-colors disabled:opacity-50"
+            className="w-full flex items-center justify-center gap-3 bg-white text-gray-800 font-semibold py-4 px-6 rounded-xl hover:bg-gray-100 hover:shadow-lg hover:-translate-y-0.5 transition-all disabled:opacity-50"
           >
             <svg className="w-5 h-5" viewBox="0 0 24 24">
               <path
-                fill="currentColor"
+                fill="#4285F4"
                 d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
               />
               <path
@@ -53,13 +75,13 @@ export default function LoginPage() {
                 d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
               />
             </svg>
-            {loading ? 'Cargando...' : 'Continuar con Google'}
+            {loading ? 'Conectando...' : 'Continuar con Google'}
           </button>
         </div>
 
-        <div className="mt-8 text-center text-green-200 text-sm">
-          <p>Predice los resultados del Mundial</p>
-          <p>Compite con tus amigos</p>
+        <div className="mt-10 text-center space-y-2">
+          <p className="text-slate-400 text-sm">Predice los resultados del Mundial</p>
+          <p className="text-slate-500 text-sm">Compite con tus amigos y gana</p>
         </div>
       </div>
     </div>
