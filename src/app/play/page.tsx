@@ -1,11 +1,10 @@
 'use client'
 
 import { createClient } from '@/lib/supabase/client'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
@@ -26,6 +25,8 @@ type Prediction = {
   team2_score: number
 }
 
+type SaveStatus = 'idle' | 'saving' | 'saved' | 'error'
+
 // Flag emoji mapping
 const flagEmojis: Record<string, string> = {
   MEX: '🇲🇽', CAN: '🇨🇦', USA: '🇺🇸', ARG: '🇦🇷', BRA: '🇧🇷', CHI: '🇨🇱',
@@ -42,10 +43,10 @@ export default function PlayPage() {
   const [matches, setMatches] = useState<Match[]>([])
   const [predictions, setPredictions] = useState<Record<number, Prediction>>({})
   const [localPredictions, setLocalPredictions] = useState<Record<number, { team1: string; team2: string }>>({})
+  const [saveStatus, setSaveStatus] = useState<Record<number, SaveStatus>>({})
   const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  const [savedCount, setSavedCount] = useState(0)
   const supabase = createClient()
+  const debounceTimers = useRef<Record<number, NodeJS.Timeout>>({})
 
   useEffect(() => {
     loadData()
@@ -93,48 +94,68 @@ export default function PlayPage() {
     }
   }
 
+  const savePrediction = useCallback(async (matchId: number, team1Score: string, team2Score: string) => {
+    const match = matches.find(m => m.id === matchId)
+    if (!match || !canPredict(match.match_date)) return
+    if (team1Score === '' || team2Score === '') return
+
+    setSaveStatus(prev => ({ ...prev, [matchId]: 'saving' }))
+    
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      setSaveStatus(prev => ({ ...prev, [matchId]: 'error' }))
+      return
+    }
+
+    const { error } = await supabase
+      .from('predictions')
+      .upsert({
+        user_id: user.id,
+        match_id: matchId,
+        team1_score: parseInt(team1Score),
+        team2_score: parseInt(team2Score),
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'user_id,match_id' })
+
+    if (error) {
+      setSaveStatus(prev => ({ ...prev, [matchId]: 'error' }))
+    } else {
+      setSaveStatus(prev => ({ ...prev, [matchId]: 'saved' }))
+      // Reset to idle after 2 seconds
+      setTimeout(() => {
+        setSaveStatus(prev => ({ ...prev, [matchId]: 'idle' }))
+      }, 2000)
+    }
+  }, [matches, supabase])
+
   function updateLocalPrediction(matchId: number, team: 'team1' | 'team2', value: string) {
     // Only allow numbers 0-9
     if (value !== '' && !/^\d$/.test(value)) return
     
-    setLocalPredictions(prev => ({
-      ...prev,
-      [matchId]: {
-        ...prev[matchId],
-        [team]: value
-      }
-    }))
-  }
-
-  async function saveAllPredictions() {
-    setSaving(true)
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-
-    let saved = 0
-    for (const [matchId, pred] of Object.entries(localPredictions)) {
-      if (pred.team1 !== '' && pred.team2 !== '') {
-        const match = matches.find(m => m.id === parseInt(matchId))
-        if (match && canPredict(match.match_date)) {
-          const { error } = await supabase
-            .from('predictions')
-            .upsert({
-              user_id: user.id,
-              match_id: parseInt(matchId),
-              team1_score: parseInt(pred.team1),
-              team2_score: parseInt(pred.team2),
-              updated_at: new Date().toISOString()
-            }, { onConflict: 'user_id,match_id' })
-          
-          if (!error) saved++
-        }
-      }
+    const newLocal = {
+      ...localPredictions[matchId],
+      [team]: value
     }
     
-    setSavedCount(saved)
-    setTimeout(() => setSavedCount(0), 3000)
-    await loadPredictions()
-    setSaving(false)
+    setLocalPredictions(prev => ({
+      ...prev,
+      [matchId]: newLocal
+    }))
+
+    // Clear existing timer for this match
+    if (debounceTimers.current[matchId]) {
+      clearTimeout(debounceTimers.current[matchId])
+    }
+
+    // Auto-save with debounce when both fields have values
+    const team1Val = team === 'team1' ? value : newLocal.team1
+    const team2Val = team === 'team2' ? value : newLocal.team2
+    
+    if (team1Val !== '' && team2Val !== '') {
+      debounceTimers.current[matchId] = setTimeout(() => {
+        savePrediction(matchId, team1Val, team2Val)
+      }, 500)
+    }
   }
 
   function canPredict(matchDate: string) {
@@ -211,18 +232,9 @@ export default function PlayPage() {
       </header>
 
       <main className="container mx-auto px-4 py-6 max-w-6xl">
-        {/* Save Button - Sticky */}
-        <div className="sticky top-16 z-40 mb-6">
-          <div className="flex justify-center">
-            <Button 
-              onClick={saveAllPredictions}
-              disabled={saving}
-              size="lg"
-              className="bg-blue-500 hover:bg-blue-600 text-white font-bold px-8 py-3 rounded-lg shadow-lg"
-            >
-              {saving ? 'Guardando...' : savedCount > 0 ? `✓ ${savedCount} guardados` : 'GUARDAR APUESTAS'}
-            </Button>
-          </div>
+        {/* Auto-save notice */}
+        <div className="text-center mb-4">
+          <span className="text-green-300/70 text-sm">💾 Los resultados se guardan automáticamente</span>
         </div>
 
         {matches.length === 0 ? (
@@ -268,7 +280,22 @@ export default function PlayPage() {
                                 Cerrado
                               </Badge>
                             )}
-                            {editable && hasPrediction && (
+                            {editable && saveStatus[match.id] === 'saving' && (
+                              <Badge variant="outline" className="text-yellow-400 border-yellow-400 animate-pulse">
+                                Guardando...
+                              </Badge>
+                            )}
+                            {editable && saveStatus[match.id] === 'saved' && (
+                              <Badge variant="outline" className="text-green-400 border-green-400">
+                                ✓ Guardado
+                              </Badge>
+                            )}
+                            {editable && saveStatus[match.id] === 'error' && (
+                              <Badge variant="outline" className="text-red-400 border-red-400">
+                                Error
+                              </Badge>
+                            )}
+                            {editable && hasPrediction && (!saveStatus[match.id] || saveStatus[match.id] === 'idle') && (
                               <Badge variant="outline" className="text-green-400 border-green-400">
                                 ✓
                               </Badge>
