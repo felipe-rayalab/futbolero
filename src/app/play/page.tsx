@@ -430,7 +430,7 @@ export default function PlayPage() {
                   {/* Footer */}
                   <div className="flex justify-between items-center text-xs pt-3 border-t border-white/5">
                     <span className="text-slate-500">Máx <span className="text-emerald-400 font-semibold">{getMaxPoints(match.phase)} pts</span></span>
-                    {editable && userId && leagueMates.length > 0 && (
+                    {editable && userId && (
                       <button
                         onClick={() => openChallengeModal(match)}
                         aria-label={`Desafiar a alguien en ${match.team1?.name} vs ${match.team2?.name}`}
@@ -483,6 +483,21 @@ export default function PlayPage() {
                 >
                   Cerrar
                 </button>
+              </div>
+            ) : leagueMates.length === 0 ? (
+              <div className="text-center py-4">
+                <div className="text-3xl mb-3">👥</div>
+                <p className="text-white font-semibold mb-1">Sin rivales disponibles</p>
+                <p className="text-slate-400 text-sm mb-4">
+                  Invita amigos a tu liga para poder desafiarlos.
+                </p>
+                <Link
+                  href="/leagues"
+                  onClick={() => setChallengeModal(null)}
+                  className="inline-block bg-gradient-to-r from-purple-500 to-purple-600 text-white text-sm font-semibold px-5 py-2.5 rounded-xl hover:shadow-lg transition-all"
+                >
+                  Ir a Ligas
+                </Link>
               </div>
             ) : (
               <>
