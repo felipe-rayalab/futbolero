@@ -1,6 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import Header from '@/components/Header'
+import LeagueCodeCopy from '@/components/LeagueCodeCopy'
 
 type Props = {
   params: Promise<{ id: string }>
@@ -9,96 +11,69 @@ type Props = {
 export default async function LeaguePage({ params }: Props) {
   const { id } = await params
   const supabase = await createClient()
-  
-  // Get league info
+
   const { data: league } = await supabase
     .from('leagues')
     .select('*')
     .eq('id', id)
     .single()
 
-  if (!league) {
-    notFound()
-  }
+  if (!league) notFound()
 
-  // Get league members with their scores
+  // Single query: members + profiles + aggregated scores
   const { data: members } = await supabase
     .from('league_members')
     .select(`
       user_id,
-      profiles (
-        id,
-        username,
-        display_name,
-        avatar_url
-      )
+      profiles (id, username, display_name, avatar_url),
+      scores:scores!scores_user_id_fkey (points, is_pleno)
     `)
     .eq('league_id', id)
 
-  // Get scores for each member
-  const memberScores = await Promise.all(
-    (members || []).map(async (member) => {
-      const { data: scores } = await supabase
-        .from('scores')
-        .select('points, is_pleno')
-        .eq('user_id', member.user_id)
-
-      const totalPoints = scores?.reduce((sum, s) => sum + s.points, 0) || 0
-      const plenos = scores?.filter(s => s.is_pleno).length || 0
-      const profile = member.profiles as any
-
-      return {
-        id: member.user_id,
-        display_name: profile?.display_name || profile?.username || 'Anónimo',
-        avatar_url: profile?.avatar_url,
-        total_points: totalPoints,
-        plenos,
-        matches_played: scores?.length || 0
-      }
-    })
-  )
-
-  // Sort by points
-  memberScores.sort((a, b) => {
+  const memberScores = (members || []).map((member) => {
+    const profile = member.profiles as any
+    const scores = (member.scores as any[]) ?? []
+    return {
+      id: member.user_id,
+      display_name: profile?.display_name ?? profile?.username ?? 'Anónimo',
+      avatar_url: profile?.avatar_url ?? null,
+      total_points: scores.reduce((sum: number, s: any) => sum + (s.points ?? 0), 0),
+      plenos: scores.filter((s: any) => s.is_pleno).length,
+      matches_played: scores.length,
+    }
+  }).sort((a, b) => {
     if (b.total_points !== a.total_points) return b.total_points - a.total_points
     return b.plenos - a.plenos
   })
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-green-900 via-green-800 to-emerald-900">
-      {/* Header */}
-      <header className="p-4 flex justify-between items-center border-b border-white/10">
-        <Link href="/" className="text-2xl font-bold text-white">⚽ El Futbolero</Link>
-        <nav className="flex gap-4">
-          <Link href="/play" className="text-green-200 hover:text-white">Jugar</Link>
-          <Link href="/leagues" className="text-green-200 hover:text-white">Ligas</Link>
-        </nav>
-      </header>
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 overflow-hidden">
+      {/* Background blobs */}
+      <div className="fixed inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute -top-40 -right-40 w-96 h-96 bg-purple-500/20 rounded-full blur-3xl" />
+        <div className="absolute top-1/2 -left-40 w-80 h-80 bg-emerald-500/20 rounded-full blur-3xl" />
+        <div className="absolute -bottom-40 right-1/3 w-72 h-72 bg-blue-500/20 rounded-full blur-3xl" />
+      </div>
 
-      <main className="container mx-auto px-4 py-8 max-w-2xl">
-        {/* League Header */}
+      <Header />
+
+      <main className="relative z-10 container mx-auto px-4 py-8 max-w-2xl">
+        {/* League header */}
         <div className="text-center mb-8">
-          <Link href="/leagues" className="text-green-300 hover:text-white text-sm">
+          <Link href="/leagues" className="text-slate-400 hover:text-white text-sm transition-colors">
             ← Volver a Mis Ligas
           </Link>
-          <h1 className="text-3xl font-bold text-white mt-4">{league.name}</h1>
-          <div className="mt-2">
-            <span className="text-green-300">Código de invitación: </span>
-            <span className="font-mono bg-white/20 px-3 py-1 rounded text-white">{league.code}</span>
+          <h1 className="text-4xl font-bold text-white mt-4">{league.name}</h1>
+          <div className="flex items-center justify-center gap-2 mt-3">
+            <span className="text-slate-400 text-sm">Código de invitación:</span>
+            <LeagueCodeCopy code={league.code} />
           </div>
-          <p className="text-green-200/70 text-sm mt-2">
-            Comparte este código con tus amigos para que se unan
-          </p>
         </div>
 
         {/* Leaderboard */}
-        <div className="bg-white/10 backdrop-blur rounded-xl overflow-hidden">
-          <div className="p-4 border-b border-white/10">
-            <h2 className="text-xl font-semibold text-white">🏆 Ranking de la Liga</h2>
-          </div>
-
-          {/* Table Header */}
-          <div className="grid grid-cols-12 gap-2 p-4 border-b border-white/10 text-green-300 text-sm font-semibold">
+        <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden">
+          {/* Table header */}
+          <div className="grid grid-cols-12 gap-2 p-4 border-b border-white/10 text-slate-400 text-sm font-medium">
             <div className="col-span-1 text-center">#</div>
             <div className="col-span-5">Jugador</div>
             <div className="col-span-2 text-center">Pts</div>
@@ -106,59 +81,48 @@ export default async function LeaguePage({ params }: Props) {
             <div className="col-span-2 text-center">Partidos</div>
           </div>
 
-          {/* Rows */}
           {memberScores.length > 0 ? (
             memberScores.map((player, index) => (
-              <div 
-                key={player.id} 
-                className={`grid grid-cols-12 gap-2 p-4 items-center ${
-                  index < 3 ? 'bg-yellow-500/10' : ''
-                } ${index !== memberScores.length - 1 ? 'border-b border-white/5' : ''}`}
+              <div
+                key={player.id}
+                className={`grid grid-cols-12 gap-2 p-4 items-center hover:bg-white/5 transition-colors
+                  ${index === 0 ? 'bg-gradient-to-r from-yellow-500/10 to-transparent' : ''}
+                  ${index === 1 ? 'bg-gradient-to-r from-slate-400/10 to-transparent' : ''}
+                  ${index === 2 ? 'bg-gradient-to-r from-orange-500/10 to-transparent' : ''}
+                  ${index !== memberScores.length - 1 ? 'border-b border-white/5' : ''}`}
               >
                 <div className="col-span-1 text-center">
                   {index === 0 && <span className="text-2xl">🥇</span>}
                   {index === 1 && <span className="text-2xl">🥈</span>}
                   {index === 2 && <span className="text-2xl">🥉</span>}
-                  {index > 2 && <span className="text-white/70">{index + 1}</span>}
+                  {index > 2 && <span className="text-slate-500 font-medium">{index + 1}</span>}
                 </div>
-                <div className="col-span-5 flex items-center gap-2">
+                <div className="col-span-5 flex items-center gap-3">
                   {player.avatar_url ? (
-                    <img 
-                      src={player.avatar_url} 
-                      alt="" 
-                      className="w-8 h-8 rounded-full"
-                    />
+                    <img src={player.avatar_url} alt="" className="w-9 h-9 rounded-full ring-2 ring-white/10" />
                   ) : (
-                    <div className="w-8 h-8 rounded-full bg-green-600 flex items-center justify-center text-white font-bold">
+                    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center text-white font-bold text-sm">
                       {player.display_name[0].toUpperCase()}
                     </div>
                   )}
-                  <span className="text-white font-medium truncate">
-                    {player.display_name}
-                  </span>
+                  <span className="text-white font-medium truncate">{player.display_name}</span>
                 </div>
-                <div className="col-span-2 text-center text-white font-bold text-lg">
-                  {player.total_points}
-                </div>
-                <div className="col-span-2 text-center text-green-300">
-                  {player.plenos}
-                </div>
-                <div className="col-span-2 text-center text-green-300">
-                  {player.matches_played}
-                </div>
+                <div className="col-span-2 text-center text-white font-bold text-lg">{player.total_points}</div>
+                <div className="col-span-2 text-center text-slate-400">{player.plenos}</div>
+                <div className="col-span-2 text-center text-slate-400">{player.matches_played}</div>
               </div>
             ))
           ) : (
-            <div className="p-8 text-center text-green-200">
-              <p>No hay miembros aún</p>
+            <div className="p-12 text-center">
+              <p className="text-lg text-white mb-1">No hay miembros aún</p>
+              <p className="text-slate-500 text-sm">Comparte el código para invitar amigos</p>
             </div>
           )}
         </div>
 
-        {/* Member Count */}
-        <div className="mt-4 text-center text-green-200/70 text-sm">
+        <p className="mt-4 text-center text-slate-500 text-sm">
           {memberScores.length} {memberScores.length === 1 ? 'miembro' : 'miembros'} en esta liga
-        </div>
+        </p>
       </main>
     </div>
   )

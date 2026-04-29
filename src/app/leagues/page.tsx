@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/client'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import Header from '@/components/Header'
 
 type League = {
   id: number
@@ -159,17 +160,7 @@ export default function LeaguesPage() {
         <div className="absolute -bottom-40 right-1/3 w-72 h-72 bg-blue-500/20 rounded-full blur-3xl" />
       </div>
 
-      {/* Header */}
-      <header className="relative z-10 p-6 flex justify-between items-center max-w-7xl mx-auto">
-        <Link href="/" className="flex items-center gap-3">
-          <span className="text-3xl">⚽</span>
-          <span className="text-xl font-bold text-white tracking-tight">El Futbolero</span>
-        </Link>
-        <nav className="flex gap-6 text-sm">
-          <Link href="/play" className="text-slate-400 hover:text-white transition-colors">Jugar</Link>
-          <Link href="/leaderboard" className="text-slate-400 hover:text-white transition-colors">Ranking</Link>
-        </nav>
-      </header>
+      <Header />
 
       <main className="relative z-10 container mx-auto px-4 py-8 max-w-2xl">
         <div className="text-center mb-8">

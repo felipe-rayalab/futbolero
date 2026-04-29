@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/client'
 import { useEffect, useState, useRef, useCallback } from 'react'
 import Link from 'next/link'
+import Header from '@/components/Header'
 
 type Match = {
   id: number
@@ -23,16 +24,30 @@ type Prediction = {
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error'
 
+type LeagueMate = {
+  id: string
+  display_name: string | null
+  username: string | null
+  avatar_url: string | null
+}
+
+type ChallengeModal = {
+  matchId: number
+  matchLabel: string
+}
+
+type ChallengeStatus = 'idle' | 'sending' | 'sent' | 'error' | 'duplicate'
+
 // Flag emoji mapping
 const flagEmojis: Record<string, string> = {
-  MEX: '🇲🇽', CAN: '🇨🇦', USA: '🇺🇸', ARG: '🇦🇷', BRA: '🇧🇷', CHI: '🇨🇱',
-  COL: '🇨🇴', ECU: '🇪🇨', PER: '🇵🇪', URU: '🇺🇾', VEN: '🇻🇪', PAR: '🇵🇾',
-  BOL: '🇧🇴', ESP: '🇪🇸', POR: '🇵🇹', FRA: '🇫🇷', GER: '🇩🇪', ENG: '🏴󠁧󠁢󠁥󠁮󠁧󠁿',
-  ITA: '🇮🇹', NED: '🇳🇱', BEL: '🇧🇪', CRO: '🇭🇷', SRB: '🇷🇸', SUI: '🇨🇭',
-  DEN: '🇩🇰', AUT: '🇦🇹', POL: '🇵🇱', UKR: '🇺🇦', WAL: '🏴󠁧󠁢󠁷󠁬󠁳󠁿', CZE: '🇨🇿',
-  SWE: '🇸🇪', NOR: '🇳🇴', SCO: '🏴󠁧󠁢󠁳󠁣󠁴󠁿', IRL: '🇮🇪', JPN: '🇯🇵', KOR: '🇰🇷',
-  AUS: '🇦🇺', KSA: '🇸🇦', IRN: '🇮🇷', QAT: '🇶🇦', SEN: '🇸🇳', MAR: '🇲🇦',
-  NGA: '🇳🇬', CMR: '🇨🇲', GHA: '🇬🇭', CIV: '🇨🇮', EGY: '🇪🇬', TUN: '🇹🇳',
+  MEX: '🇲🇽', CAN: '🇨🇦', USA: '🇺🇸', ARG: '🇦🇷', BRA: '🇧🇷', URU: '🇺🇾',
+  COL: '🇨🇴', ECU: '🇪🇨', PAR: '🇵🇾', ESP: '🇪🇸', POR: '🇵🇹', FRA: '🇫🇷',
+  GER: '🇩🇪', ENG: '🏴󠁧󠁢󠁥󠁮󠁧󠁿', NED: '🇳🇱', BEL: '🇧🇪', CRO: '🇭🇷', SUI: '🇨🇭',
+  AUT: '🇦🇹', CZE: '🇨🇿', SWE: '🇸🇪', NOR: '🇳🇴', SCO: '🏴󠁧󠁢󠁳󠁣󠁴󠁿', JPN: '🇯🇵',
+  KOR: '🇰🇷', AUS: '🇦🇺', KSA: '🇸🇦', IRN: '🇮🇷', QAT: '🇶🇦', TUR: '🇹🇷',
+  IRQ: '🇮🇶', UZB: '🇺🇿', JOR: '🇯🇴', SEN: '🇸🇳', MAR: '🇲🇦', GHA: '🇬🇭',
+  CIV: '🇨🇮', EGY: '🇪🇬', TUN: '🇹🇳', RSA: '🇿🇦', CMR: '🇨🇲', HAI: '🇭🇹',
+  CPV: '🇨🇻', COD: '🇨🇩', BIH: '🇧🇦', ALG: '🇩🇿', CUW: '🇨🇼', PAN: '🇵🇦',
 }
 
 export default function PlayPage() {
@@ -42,6 +57,10 @@ export default function PlayPage() {
   const [saveStatus, setSaveStatus] = useState<Record<number, SaveStatus>>({})
   const [loading, setLoading] = useState(true)
   const [activePhase, setActivePhase] = useState<string>('')
+  const [userId, setUserId] = useState<string | null>(null)
+  const [leagueMates, setLeagueMates] = useState<LeagueMate[]>([])
+  const [challengeModal, setChallengeModal] = useState<ChallengeModal | null>(null)
+  const [challengeStatus, setChallengeStatus] = useState<ChallengeStatus>('idle')
   const supabase = createClient()
   const debounceTimers = useRef<Record<number, NodeJS.Timeout>>({})
 
@@ -50,8 +69,39 @@ export default function PlayPage() {
   }, [])
 
   async function loadData() {
-    await Promise.all([loadMatches(), loadPredictions()])
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) setUserId(user.id)
+    await Promise.all([loadMatches(), loadPredictions(), user ? loadLeagueMates(user.id) : Promise.resolve()])
     setLoading(false)
+  }
+
+  async function loadLeagueMates(uid: string) {
+    const { data: myLeagues } = await supabase
+      .from('league_members')
+      .select('league_id')
+      .eq('user_id', uid)
+
+    if (!myLeagues?.length) return
+
+    const leagueIds = myLeagues.map(l => l.league_id)
+    const { data: members } = await supabase
+      .from('league_members')
+      .select('user_id, profiles!inner(id, display_name, username, avatar_url)')
+      .in('league_id', leagueIds)
+      .neq('user_id', uid)
+
+    if (!members) return
+
+    const seen = new Set<string>()
+    const mates: LeagueMate[] = []
+    for (const m of members) {
+      const p = m.profiles as any
+      if (!seen.has(m.user_id)) {
+        seen.add(m.user_id)
+        mates.push({ id: m.user_id, display_name: p.display_name, username: p.username, avatar_url: p.avatar_url })
+      }
+    }
+    setLeagueMates(mates)
   }
 
   async function loadMatches() {
@@ -156,6 +206,25 @@ export default function PlayPage() {
     }
   }
 
+  async function sendChallenge(challengedId: string) {
+    if (!userId || !challengeModal) return
+    setChallengeStatus('sending')
+    const { error } = await supabase
+      .from('challenges')
+      .insert({ match_id: challengeModal.matchId, challenger_id: userId, challenged_id: challengedId })
+    if (error) {
+      setChallengeStatus(error.code === '23505' ? 'duplicate' : 'error')
+    } else {
+      setChallengeStatus('sent')
+    }
+  }
+
+  function openChallengeModal(match: Match) {
+    const label = `${getFlag(match.team1?.code)} ${match.team1?.name ?? 'TBD'} vs ${match.team2?.name ?? 'TBD'} ${getFlag(match.team2?.code)}`
+    setChallengeModal({ matchId: match.id, matchLabel: label })
+    setChallengeStatus('idle')
+  }
+
   function canPredict(matchDate: string) {
     const matchTime = new Date(matchDate).getTime()
     const now = Date.now()
@@ -224,19 +293,7 @@ export default function PlayPage() {
         <div className="absolute -bottom-40 right-1/3 w-72 h-72 bg-purple-500/20 rounded-full blur-3xl" />
       </div>
 
-      {/* Header */}
-      <header className="sticky top-0 z-50 bg-slate-950/80 backdrop-blur-xl border-b border-white/5">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex justify-between items-center">
-          <Link href="/" className="flex items-center gap-3">
-            <span className="text-2xl">⚽</span>
-            <span className="text-lg font-bold text-white tracking-tight hidden sm:block">El Futbolero</span>
-          </Link>
-          <nav className="flex gap-4 sm:gap-6 text-sm">
-            <Link href="/leaderboard" className="text-slate-400 hover:text-white transition-colors">Ranking</Link>
-            <Link href="/leagues" className="text-slate-400 hover:text-white transition-colors">Ligas</Link>
-          </nav>
-        </div>
-      </header>
+      <Header />
 
       <main className="relative z-10 container mx-auto px-4 py-6 max-w-6xl">
         {/* Title & auto-save notice */}
@@ -247,26 +304,36 @@ export default function PlayPage() {
 
         {/* Phase tabs */}
         {phases.length > 0 && (
-          <div className="flex gap-2 mb-6 overflow-x-auto pb-2 scrollbar-hide">
-            {phases.map(phase => (
-              <button
-                key={phase}
-                onClick={() => setActivePhase(phase)}
-                className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all ${
-                  activePhase === phase 
-                    ? 'bg-emerald-500 text-white' 
-                    : 'bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white'
-                }`}
-              >
-                {getPhaseLabel(phase)}
-              </button>
-            ))}
+          <div className="relative mb-6" role="tablist" aria-label="Fases del torneo">
+            <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+              {phases.map(phase => (
+                <button
+                  key={phase}
+                  role="tab"
+                  aria-selected={activePhase === phase}
+                  onClick={() => setActivePhase(phase)}
+                  className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50 ${
+                    activePhase === phase
+                      ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20'
+                      : 'bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white'
+                  }`}
+                >
+                  {getPhaseLabel(phase)}
+                </button>
+              ))}
+            </div>
+            <div className="absolute right-0 top-0 bottom-2 w-8 bg-gradient-to-l from-slate-950 to-transparent pointer-events-none" aria-hidden="true" />
           </div>
         )}
 
         {matches.length === 0 ? (
-          <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-sm border border-white/10 rounded-2xl p-12 text-center">
-            <p className="text-slate-400 text-lg">No hay partidos programados aún</p>
+          <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-sm border border-white/10 rounded-2xl p-12 text-center max-w-md mx-auto">
+            <div className="text-6xl mb-4" aria-hidden="true">⚽</div>
+            <h2 className="text-white text-xl font-semibold mb-2">El torneo está por comenzar</h2>
+            <p className="text-slate-400 text-sm leading-relaxed mb-4">
+              Los partidos de la fase de grupos del Mundial 2026 arrancan el <span className="text-white font-medium">12 de junio de 2026</span>.
+            </p>
+            <p className="text-slate-500 text-sm">Vuelve aquí cuando empiece para hacer tus predicciones.</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -275,38 +342,53 @@ export default function PlayPage() {
               const local = localPredictions[match.id] || { team1: '', team2: '' }
               const hasPrediction = local.team1 !== '' && local.team2 !== ''
               const status = saveStatus[match.id]
-              
+
               return (
-                <div 
-                  key={match.id} 
-                  className={`bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-sm border border-white/10 rounded-2xl p-5 transition-all ${
-                    !editable ? 'opacity-50' : 'hover:border-white/20'
+                <div
+                  key={match.id}
+                  className={`relative bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-sm rounded-2xl p-5 transition-all border ${
+                    !editable
+                      ? 'opacity-60 border-white/5'
+                      : hasPrediction
+                      ? 'border-emerald-500/30 hover:border-emerald-500/50'
+                      : 'border-white/10 hover:border-white/20'
                   }`}
                 >
+                  {/* Link to detail — covers the header area */}
+                  <Link
+                    href={`/play/${match.id}`}
+                    className="absolute top-0 right-0 text-xs text-slate-600 hover:text-slate-400 transition-colors p-3"
+                    aria-label="Ver detalle del partido"
+                  >
+                    →
+                  </Link>
                   {/* Header */}
                   <div className="flex justify-between items-center mb-4">
                     <span className="text-xs text-slate-500">{formatDate(match.match_date)}</span>
                     {!editable && (
-                      <span className="text-xs text-red-400 bg-red-400/10 px-2 py-1 rounded-full">Cerrado</span>
+                      <span className="text-xs text-slate-400 bg-white/5 px-2 py-1 rounded-full">Cerrado</span>
                     )}
                     {editable && status === 'saving' && (
-                      <span className="text-xs text-yellow-400 bg-yellow-400/10 px-2 py-1 rounded-full animate-pulse">Guardando...</span>
+                      <span className="text-xs text-yellow-400 bg-yellow-400/10 px-2 py-1 rounded-full animate-pulse" role="status">Guardando…</span>
                     )}
                     {editable && status === 'saved' && (
-                      <span className="text-xs text-emerald-400 bg-emerald-400/10 px-2 py-1 rounded-full">✓ Guardado</span>
+                      <span className="text-xs text-emerald-400 bg-emerald-400/10 px-2 py-1 rounded-full" role="status">✓ Guardado</span>
                     )}
                     {editable && status === 'error' && (
-                      <span className="text-xs text-red-400 bg-red-400/10 px-2 py-1 rounded-full">Error</span>
+                      <span className="text-xs text-red-400 bg-red-400/10 px-2 py-1 rounded-full" role="alert">Error al guardar</span>
                     )}
                     {editable && hasPrediction && (!status || status === 'idle') && (
-                      <span className="text-xs text-emerald-400 bg-emerald-400/10 px-2 py-1 rounded-full">✓</span>
+                      <span className="text-xs text-emerald-400 bg-emerald-400/10 px-2 py-1 rounded-full">✓ Listo</span>
+                    )}
+                    {editable && !hasPrediction && (!status || status === 'idle') && (
+                      <span className="text-xs text-slate-500 bg-white/5 px-2 py-1 rounded-full">Sin predicción</span>
                     )}
                   </div>
-                  
+
                   {/* Team 1 */}
                   <div className="flex items-center justify-between gap-3 mb-3">
                     <div className="flex items-center gap-3 flex-1 min-w-0">
-                      <span className="text-2xl">{getFlag(match.team1?.code)}</span>
+                      <span className="text-2xl" aria-hidden="true">{getFlag(match.team1?.code)}</span>
                       <span className="text-white font-medium truncate">
                         {match.team1?.name || 'TBD'}
                       </span>
@@ -318,15 +400,16 @@ export default function PlayPage() {
                       value={local.team1}
                       onChange={(e) => updateLocalPrediction(match.id, 'team1', e.target.value)}
                       disabled={!editable}
-                      className="w-14 h-14 text-center text-2xl font-bold bg-white/10 border border-white/10 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50 disabled:opacity-50"
-                      placeholder="-"
+                      aria-label={`Goles ${match.team1?.name || 'Equipo 1'}`}
+                      className="w-14 h-14 text-center text-2xl font-bold bg-white/10 border border-white/10 rounded-xl text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 disabled:opacity-50"
+                      placeholder="–"
                     />
                   </div>
 
                   {/* Team 2 */}
                   <div className="flex items-center justify-between gap-3 mb-4">
                     <div className="flex items-center gap-3 flex-1 min-w-0">
-                      <span className="text-2xl">{getFlag(match.team2?.code)}</span>
+                      <span className="text-2xl" aria-hidden="true">{getFlag(match.team2?.code)}</span>
                       <span className="text-white font-medium truncate">
                         {match.team2?.name || 'TBD'}
                       </span>
@@ -338,15 +421,24 @@ export default function PlayPage() {
                       value={local.team2}
                       onChange={(e) => updateLocalPrediction(match.id, 'team2', e.target.value)}
                       disabled={!editable}
-                      className="w-14 h-14 text-center text-2xl font-bold bg-white/10 border border-white/10 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50 disabled:opacity-50"
-                      placeholder="-"
+                      aria-label={`Goles ${match.team2?.name || 'Equipo 2'}`}
+                      className="w-14 h-14 text-center text-2xl font-bold bg-white/10 border border-white/10 rounded-xl text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 disabled:opacity-50"
+                      placeholder="–"
                     />
                   </div>
 
                   {/* Footer */}
-                  <div className="flex justify-between text-xs pt-3 border-t border-white/5">
-                    <span className="text-slate-500">Puntaje máx</span>
-                    <span className="text-emerald-400 font-semibold">{getMaxPoints(match.phase)} pts</span>
+                  <div className="flex justify-between items-center text-xs pt-3 border-t border-white/5">
+                    <span className="text-slate-500">Máx <span className="text-emerald-400 font-semibold">{getMaxPoints(match.phase)} pts</span></span>
+                    {editable && userId && leagueMates.length > 0 && (
+                      <button
+                        onClick={() => openChallengeModal(match)}
+                        aria-label={`Desafiar a alguien en ${match.team1?.name} vs ${match.team2?.name}`}
+                        className="flex items-center gap-1 text-orange-400 hover:text-orange-300 transition-colors font-medium focus-visible:outline-none focus-visible:underline"
+                      >
+                        ⚔️ Desafiar
+                      </button>
+                    )}
                   </div>
 
                   {/* Result if finished */}
@@ -361,6 +453,71 @@ export default function PlayPage() {
           </div>
         )}
       </main>
+
+      {/* Challenge modal */}
+      {challengeModal && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="w-full max-w-sm bg-slate-900 border border-white/10 rounded-2xl p-6 shadow-2xl">
+            <div className="flex justify-between items-start mb-4">
+              <div>
+                <h3 className="text-white font-bold text-lg">⚔️ Desafiar</h3>
+                <p className="text-slate-400 text-sm mt-0.5 leading-tight">{challengeModal.matchLabel}</p>
+              </div>
+              <button
+                onClick={() => setChallengeModal(null)}
+                aria-label="Cerrar modal"
+                className="text-slate-500 hover:text-white transition-colors text-xl leading-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50 rounded"
+              >
+                ×
+              </button>
+            </div>
+
+            {challengeStatus === 'sent' ? (
+              <div className="text-center py-4">
+                <div className="text-4xl mb-3">🎯</div>
+                <p className="text-white font-semibold">¡Desafío enviado!</p>
+                <p className="text-slate-400 text-sm mt-1">Tu rival debe aceptarlo antes del partido</p>
+                <button
+                  onClick={() => setChallengeModal(null)}
+                  className="mt-4 w-full bg-white/10 text-white py-2.5 rounded-xl hover:bg-white/20 transition-all"
+                >
+                  Cerrar
+                </button>
+              </div>
+            ) : (
+              <>
+                <p className="text-slate-400 text-sm mb-4">Elige a quién desafiar:</p>
+                <div className="space-y-2 max-h-64 overflow-y-auto">
+                  {leagueMates.map(mate => (
+                    <button
+                      key={mate.id}
+                      onClick={() => sendChallenge(mate.id)}
+                      disabled={challengeStatus === 'sending'}
+                      className="w-full flex items-center gap-3 p-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 hover:border-orange-500/30 transition-all disabled:opacity-50 text-left"
+                    >
+                      {mate.avatar_url ? (
+                        <img src={mate.avatar_url} alt="" className="w-9 h-9 rounded-full ring-2 ring-white/10" />
+                      ) : (
+                        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-orange-500 to-pink-600 flex items-center justify-center text-white font-bold text-sm">
+                          {(mate.display_name ?? mate.username ?? '?')[0].toUpperCase()}
+                        </div>
+                      )}
+                      <span className="text-white font-medium">
+                        {mate.display_name ?? mate.username ?? 'Anónimo'}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                {(challengeStatus === 'error' || challengeStatus === 'duplicate') && (
+                  <p className="text-red-400 text-sm mt-3 text-center">
+                    {challengeStatus === 'duplicate' ? 'Ya existe un desafío para este partido con ese jugador' : 'Error al enviar el desafío'}
+                  </p>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

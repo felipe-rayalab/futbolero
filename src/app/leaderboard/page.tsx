@@ -1,9 +1,9 @@
 import { createClient } from '@/lib/supabase/server'
-import Link from 'next/link'
+import Header from '@/components/Header'
 
 export default async function LeaderboardPage() {
   const supabase = await createClient()
-  
+
   const { data: leaderboard } = await supabase
     .from('v_leaderboard_general')
     .select('*')
@@ -18,17 +18,7 @@ export default async function LeaderboardPage() {
         <div className="absolute -bottom-40 right-1/3 w-72 h-72 bg-emerald-500/20 rounded-full blur-3xl" />
       </div>
 
-      {/* Header */}
-      <header className="relative z-10 p-6 flex justify-between items-center max-w-7xl mx-auto">
-        <Link href="/" className="flex items-center gap-3">
-          <span className="text-3xl">⚽</span>
-          <span className="text-xl font-bold text-white tracking-tight">El Futbolero</span>
-        </Link>
-        <nav className="flex gap-6 text-sm">
-          <Link href="/play" className="text-slate-400 hover:text-white transition-colors">Jugar</Link>
-          <Link href="/leagues" className="text-slate-400 hover:text-white transition-colors">Ligas</Link>
-        </nav>
-      </header>
+      <Header />
 
       <main className="relative z-10 container mx-auto px-4 py-8 max-w-2xl">
         <div className="text-center mb-8">
@@ -94,18 +84,19 @@ export default async function LeaderboardPage() {
             ))
           ) : (
             <div className="p-12 text-center">
-              <div className="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-4">
-                <span className="text-3xl">🏆</span>
-              </div>
-              <p className="text-lg text-white mb-2">No hay jugadores aún</p>
-              <p className="text-sm text-slate-500 mb-6">
-                ¡Sé el primero en ingresar tus pronósticos!
+              <div className="text-5xl mb-4" aria-hidden="true">🏆</div>
+              <p className="text-lg text-white font-semibold mb-2">El ranking empieza el 12 de junio</p>
+              <p className="text-sm text-slate-400 mb-1">
+                Los puntos se calculan cuando terminan los partidos.
               </p>
-              <Link 
-                href="/play" 
+              <p className="text-sm text-slate-500 mb-6">
+                Igual puedes ingresar tus predicciones antes de que empiece el Mundial.
+              </p>
+              <Link
+                href="/play"
                 className="inline-flex items-center gap-2 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white font-semibold px-6 py-3 rounded-full hover:shadow-lg hover:shadow-emerald-500/25 hover:-translate-y-0.5 transition-all"
               >
-                Jugar Ahora
+                Hacer predicciones
               </Link>
             </div>
           )}
