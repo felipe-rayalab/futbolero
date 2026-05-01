@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import Header from '@/components/Header'
+import Avatar from '@/components/Avatar'
 
 export default async function LeaderboardPage() {
   const supabase = await createClient()
@@ -56,17 +57,7 @@ export default async function LeaderboardPage() {
                   {index > 2 && <span className="text-slate-500 font-medium">{index + 1}</span>}
                 </div>
                 <div className="col-span-5 flex items-center gap-3">
-                  {player.avatar_url ? (
-                    <img 
-                      src={player.avatar_url} 
-                      alt="" 
-                      className="w-9 h-9 rounded-full ring-2 ring-white/10"
-                    />
-                  ) : (
-                    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center text-white font-bold text-sm">
-                      {(player.display_name || player.username || '?')[0].toUpperCase()}
-                    </div>
-                  )}
+                  <Avatar url={player.avatar_url} name={player.display_name || player.username} size={36} />
                   <span className="text-white font-medium truncate">
                     {player.display_name || player.username || 'Anónimo'}
                   </span>

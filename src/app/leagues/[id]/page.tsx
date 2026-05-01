@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import Header from '@/components/Header'
 import LeagueCodeCopy from '@/components/LeagueCodeCopy'
+import Avatar from '@/components/Avatar'
 
 type Props = {
   params: Promise<{ id: string }>
@@ -98,13 +99,7 @@ export default async function LeaguePage({ params }: Props) {
                   {index > 2 && <span className="text-slate-500 font-medium">{index + 1}</span>}
                 </div>
                 <div className="col-span-5 flex items-center gap-3">
-                  {player.avatar_url ? (
-                    <img src={player.avatar_url} alt="" className="w-9 h-9 rounded-full ring-2 ring-white/10" />
-                  ) : (
-                    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center text-white font-bold text-sm">
-                      {player.display_name[0].toUpperCase()}
-                    </div>
-                  )}
+                  <Avatar url={player.avatar_url} name={player.display_name} size={36} />
                   <span className="text-white font-medium truncate">{player.display_name}</span>
                 </div>
                 <div className="col-span-2 text-center text-white font-bold text-lg">{player.total_points}</div>

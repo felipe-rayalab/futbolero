@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import Header from '@/components/Header'
+import Avatar from '@/components/Avatar'
 
 type Profile = {
   id: string
@@ -54,15 +55,8 @@ function profileName(p: Profile | null) {
   return p?.display_name ?? p?.username ?? 'Anónimo'
 }
 
-function Avatar({ profile, size = 8 }: { profile: Profile | null; size?: number }) {
-  const name = profileName(profile)
-  return profile?.avatar_url ? (
-    <img src={profile.avatar_url} alt="" className={`w-${size} h-${size} rounded-full ring-2 ring-white/10`} />
-  ) : (
-    <div className={`w-${size} h-${size} rounded-full bg-gradient-to-br from-orange-500 to-pink-600 flex items-center justify-center text-white font-bold text-sm`}>
-      {name[0].toUpperCase()}
-    </div>
-  )
+function ChallengeAvatar({ profile }: { profile: Profile | null }) {
+  return <Avatar url={profile?.avatar_url} name={profileName(profile)} size={36} />
 }
 
 export default function ChallengesPage() {
@@ -178,7 +172,7 @@ export default function ChallengesPage() {
               {received.map(c => (
                 <div key={c.id} className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-sm border border-orange-500/20 rounded-2xl p-5">
                   <div className="flex items-center gap-3 mb-4">
-                    <Avatar profile={c.challenger} />
+                    <ChallengeAvatar profile={c.challenger} />
                     <div className="flex-1 min-w-0">
                       <p className="text-white font-semibold">{profileName(c.challenger)}</p>
                       <p className="text-slate-400 text-sm truncate">{matchLabel(c.match)}</p>
@@ -217,7 +211,7 @@ export default function ChallengesPage() {
               {sent.map(c => (
                 <div key={c.id} className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-sm border border-white/10 rounded-2xl p-4">
                   <div className="flex items-center gap-3">
-                    <Avatar profile={c.challenged} />
+                    <ChallengeAvatar profile={c.challenged} />
                     <div className="flex-1 min-w-0">
                       <p className="text-white font-semibold">{profileName(c.challenged)}</p>
                       <p className="text-slate-400 text-sm truncate">{matchLabel(c.match)}</p>
@@ -246,7 +240,7 @@ export default function ChallengesPage() {
                   return (
                     <div key={c.id} className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-sm border border-yellow-500/20 rounded-2xl p-4">
                       <div className="flex items-center gap-3">
-                        <Avatar profile={opponent} />
+                        <ChallengeAvatar profile={opponent} />
                         <div className="flex-1 min-w-0">
                           <p className="text-white font-semibold">{profileName(opponent)}</p>
                           <p className="text-slate-400 text-sm truncate">{matchLabel(c.match)}</p>
@@ -276,7 +270,7 @@ export default function ChallengesPage() {
                   return (
                     <div key={c.id} className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-sm border border-white/10 rounded-2xl p-4">
                       <div className="flex items-center gap-3">
-                        <Avatar profile={opponent} />
+                        <ChallengeAvatar profile={opponent} />
                         <div className="flex-1 min-w-0">
                           <p className="text-white font-semibold">{profileName(opponent)}</p>
                           <p className="text-slate-400 text-sm truncate">{matchLabel(c.match)}</p>

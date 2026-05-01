@@ -1,4 +1,5 @@
 import { createAdminClient } from '@/lib/supabase/admin'
+import { verifyAdminToken } from '@/lib/auth-admin'
 import { getWCMatchesByDate, ourCodeToTLA, isLiveStatus, isFinishedStatus, type FDMatch } from '@/lib/football-api'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -6,8 +7,7 @@ import { NextRequest, NextResponse } from 'next/server'
 // Llamado por el cron job cada minuto durante el torneo.
 // Busca partidos activos en football-data.org y actualiza scores + puntos en tiempo real.
 export async function GET(req: NextRequest) {
-  const token = req.headers.get('authorization')?.replace('Bearer ', '')
-  if (!token || token !== process.env.ADMIN_SECRET) {
+  if (!verifyAdminToken(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

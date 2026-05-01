@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Header from '@/components/Header'
+import AvatarComponent from '@/components/Avatar'
 
 type Profile = {
   id: string
@@ -150,13 +151,7 @@ export default function ProfilePage() {
         {/* Avatar + edit form */}
         <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-sm border border-white/10 rounded-2xl p-6 mb-6">
           <div className="flex items-center gap-5 mb-6">
-            {profile?.avatar_url ? (
-              <img src={profile.avatar_url} alt="" className="w-20 h-20 rounded-full ring-4 ring-white/10" />
-            ) : (
-              <div className="w-20 h-20 rounded-full bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center text-white font-bold text-3xl">
-                {initials}
-              </div>
-            )}
+            <AvatarComponent url={profile?.avatar_url} name={displayName || profile?.username} size={80} />
             <div>
               <p className="text-white font-semibold text-lg">{displayName || profile?.username || 'Sin nombre'}</p>
               <p className="text-slate-400 text-sm">{profile?.username ? `@${profile.username}` : 'Sin usuario'}</p>

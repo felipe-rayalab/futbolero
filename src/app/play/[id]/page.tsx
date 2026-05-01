@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import Header from '@/components/Header'
+import Avatar from '@/components/Avatar'
 
 type Team = { name: string; code: string }
 
@@ -301,13 +302,7 @@ export default function MatchDetailPage() {
                     </span>
 
                     {/* Avatar */}
-                    {pred.profile?.avatar_url ? (
-                      <img src={pred.profile.avatar_url} alt="" className="w-8 h-8 rounded-full shrink-0" />
-                    ) : (
-                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-slate-600 to-slate-700 flex items-center justify-center text-white text-xs font-bold shrink-0">
-                        {profileName(pred.profile)[0].toUpperCase()}
-                      </div>
-                    )}
+                    <Avatar url={pred.profile?.avatar_url} name={profileName(pred.profile)} size={32} />
 
                     {/* Name */}
                     <span className={`flex-1 text-sm font-medium truncate ${isMe ? 'text-emerald-400' : 'text-white'}`}>

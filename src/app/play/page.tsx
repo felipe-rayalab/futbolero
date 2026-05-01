@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useEffect, useState, useRef, useCallback } from 'react'
 import Link from 'next/link'
 import Header from '@/components/Header'
+import Avatar from '@/components/Avatar'
 
 type Match = {
   id: number
@@ -510,13 +511,7 @@ export default function PlayPage() {
                       disabled={challengeStatus === 'sending'}
                       className="w-full flex items-center gap-3 p-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 hover:border-orange-500/30 transition-all disabled:opacity-50 text-left"
                     >
-                      {mate.avatar_url ? (
-                        <img src={mate.avatar_url} alt="" className="w-9 h-9 rounded-full ring-2 ring-white/10" />
-                      ) : (
-                        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-orange-500 to-pink-600 flex items-center justify-center text-white font-bold text-sm">
-                          {(mate.display_name ?? mate.username ?? '?')[0].toUpperCase()}
-                        </div>
-                      )}
+                      <Avatar url={mate.avatar_url} name={mate.display_name ?? mate.username} size={36} />
                       <span className="text-white font-medium">
                         {mate.display_name ?? mate.username ?? 'Anónimo'}
                       </span>

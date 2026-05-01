@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
+import Avatar from '@/components/Avatar'
 
 type UserInfo = {
   display_name: string | null
@@ -83,20 +84,7 @@ export default function Header() {
             <div className="w-8 h-8 rounded-full bg-white/10 animate-pulse" />
           ) : user ? (
             <>
-              {user.avatar_url ? (
-                <img
-                  src={user.avatar_url}
-                  alt={user.display_name ?? user.email ?? 'Usuario'}
-                  className="w-8 h-8 rounded-full ring-2 ring-white/10"
-                />
-              ) : (
-                <div
-                  className="w-8 h-8 rounded-full bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center text-white font-bold text-xs"
-                  aria-label={user.display_name ?? user.email ?? 'Usuario'}
-                >
-                  {initials}
-                </div>
-              )}
+              <Avatar url={user.avatar_url} name={user.display_name ?? user.email} size={32} />
               <form action="/auth/signout" method="post">
                 <button
                   type="submit"

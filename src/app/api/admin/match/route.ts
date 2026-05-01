@@ -1,13 +1,12 @@
 import { createAdminClient } from '@/lib/supabase/admin'
+import { verifyAdminToken } from '@/lib/auth-admin'
 import { NextRequest, NextResponse } from 'next/server'
 
 // POST /api/admin/match
 // Body: { match_id: number, status: 'live' | 'finished', team1_score?: number, team2_score?: number }
 // Header: Authorization: Bearer <ADMIN_SECRET>
 export async function POST(req: NextRequest) {
-  // Auth
-  const token = req.headers.get('authorization')?.replace('Bearer ', '')
-  if (!token || token !== process.env.ADMIN_SECRET) {
+  if (!verifyAdminToken(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
@@ -61,8 +60,7 @@ export async function POST(req: NextRequest) {
 
 // GET /api/admin/match?id=X — ver estado actual de un partido
 export async function GET(req: NextRequest) {
-  const token = req.headers.get('authorization')?.replace('Bearer ', '')
-  if (!token || token !== process.env.ADMIN_SECRET) {
+  if (!verifyAdminToken(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
