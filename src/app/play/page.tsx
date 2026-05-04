@@ -69,6 +69,14 @@ export default function PlayPage() {
     loadData()
   }, [])
 
+  // Re-evaluate canPredict every 30s so inputs auto-lock when deadline passes
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setMatches(prev => [...prev])
+    }, 30_000)
+    return () => clearInterval(interval)
+  }, [])
+
   async function loadData() {
     const { data: { user } } = await supabase.auth.getUser()
     if (user) setUserId(user.id)
