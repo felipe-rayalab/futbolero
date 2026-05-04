@@ -26,25 +26,22 @@ async function fetchFD(path: string): Promise<any> {
   return res.json()
 }
 
-export async function getWCMatchesByDate(dateFrom: string, dateTo: string): Promise<FDMatch[]> {
-  const data = await fetchFD(`/competitions/WC/matches?dateFrom=${dateFrom}&dateTo=${dateTo}`)
+export async function getMatchesByDate(competition: string, dateFrom: string, dateTo: string): Promise<FDMatch[]> {
+  const data = await fetchFD(`/competitions/${competition}/matches?dateFrom=${dateFrom}&dateTo=${dateTo}`)
   return data.matches ?? []
 }
 
-export async function getWCLiveMatches(): Promise<FDMatch[]> {
-  const data = await fetchFD('/competitions/WC/matches?status=IN_PLAY')
-  return data.matches ?? []
-}
-
-// Algunos códigos difieren entre FIFA y football-data.org
+// Algunos códigos difieren entre nuestra DB y football-data.org
 const FD_TLA_OVERRIDES: Record<string, string> = {
-  // nuestro código → TLA de football-data.org
+  // World Cup overrides
   KSA: 'KSA',
   CUW: 'CUW',
   CPV: 'CPV',
   COD: 'COD',
   BIH: 'BIH',
   ALG: 'ALG',
+  // Champions League overrides
+  BAY: 'FCB', // Bayern München
 }
 
 export function ourCodeToTLA(code: string): string {

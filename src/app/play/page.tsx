@@ -303,8 +303,8 @@ export default function PlayPage() {
           <span className="text-emerald-400/70 text-sm">💾 Guardado automático</span>
         </div>
 
-        {/* Phase tabs */}
-        {phases.length > 0 && (
+        {/* Phase tabs — only shown when there are multiple phases */}
+        {phases.length > 1 && (
           <div className="relative mb-6" role="tablist" aria-label="Fases del torneo">
             <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
               {phases.map(phase => (

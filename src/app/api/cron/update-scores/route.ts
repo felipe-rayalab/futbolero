@@ -1,6 +1,6 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyAdminToken } from '@/lib/auth-admin'
-import { getWCMatchesByDate, ourCodeToTLA, isLiveStatus, isFinishedStatus, type FDMatch } from '@/lib/football-api'
+import { getMatchesByDate, ourCodeToTLA, isLiveStatus, isFinishedStatus, type FDMatch } from '@/lib/football-api'
 import { NextRequest, NextResponse } from 'next/server'
 
 // GET /api/cron/update-scores
@@ -34,10 +34,18 @@ export async function GET(req: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   if (!ourMatches?.length) return NextResponse.json({ ok: true, message: 'Sin partidos activos' })
 
-  // Obtener partidos del día desde football-data.org (1 sola llamada)
+  // Obtener partidos del día desde football-data.org (WC + CL en paralelo)
   let fdMatches: FDMatch[] = []
   try {
-    fdMatches = await getWCMatchesByDate(dateFrom, dateTo)
+    const [wcMatches, clMatches] = await Promise.allSettled([
+      getMatchesByDate('WC', dateFrom, dateTo),
+      getMatchesByDate('CL', dateFrom, dateTo),
+    ])
+    if (wcMatches.status === 'fulfilled') fdMatches.push(...wcMatches.value)
+    if (clMatches.status === 'fulfilled') fdMatches.push(...clMatches.value)
+    if (wcMatches.status === 'rejected' && clMatches.status === 'rejected') {
+      return NextResponse.json({ error: String(wcMatches.reason) }, { status: 502 })
+    }
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 502 })
   }
