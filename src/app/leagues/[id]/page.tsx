@@ -22,27 +22,30 @@ export default async function LeaguePage({ params }: Props) {
 
   if (!league) notFound()
 
-  // Single query: members + profiles + aggregated scores (admin bypasses RLS on league_members)
+  // Two queries via admin client (bypasses RLS on league_members and scores)
   const admin = createAdminClient()
+
   const { data: members } = await admin
     .from('league_members')
-    .select(`
-      user_id,
-      profiles (id, username, display_name, avatar_url),
-      scores:scores!scores_user_id_fkey (points, is_pleno)
-    `)
+    .select('user_id, profiles(id, display_name, username, avatar_url)')
     .eq('league_id', id)
+
+  const userIds = (members || []).map((m) => m.user_id)
+
+  const { data: scores } = userIds.length > 0
+    ? await admin.from('scores').select('user_id, points, is_pleno').in('user_id', userIds)
+    : { data: [] }
 
   const memberScores = (members || []).map((member) => {
     const profile = member.profiles as any
-    const scores = (member.scores as any[]) ?? []
+    const memberScoreRows = (scores || []).filter((s: any) => s.user_id === member.user_id)
     return {
       id: member.user_id,
       display_name: profile?.display_name ?? profile?.username ?? 'Anónimo',
       avatar_url: profile?.avatar_url ?? null,
-      total_points: scores.reduce((sum: number, s: any) => sum + (s.points ?? 0), 0),
-      plenos: scores.filter((s: any) => s.is_pleno).length,
-      matches_played: scores.length,
+      total_points: memberScoreRows.reduce((sum: number, s: any) => sum + (s.points ?? 0), 0),
+      plenos: memberScoreRows.filter((s: any) => s.is_pleno).length,
+      matches_played: memberScoreRows.length,
     }
   }).sort((a, b) => {
     if (b.total_points !== a.total_points) return b.total_points - a.total_points
