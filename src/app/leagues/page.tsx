@@ -104,33 +104,15 @@ export default function LeaguesPage() {
     }
 
     try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
+      const res = await fetch('/api/leagues/join', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: joinCode.trim() }),
+      })
+      const data = await res.json()
 
-      const { data: league } = await supabase
-        .from('leagues')
-        .select('id')
-        .eq('code', joinCode.trim().toUpperCase())
-        .single()
-
-      if (!league) {
-        setError('Liga no encontrada')
-        return
-      }
-
-      const { error: joinError } = await supabase
-        .from('league_members')
-        .insert({
-          league_id: league.id,
-          user_id: user.id
-        })
-
-      if (joinError) {
-        if (joinError.code === '23505') {
-          setError('Ya eres miembro de esta liga')
-        } else {
-          setError('Error al unirse')
-        }
+      if (!res.ok) {
+        setError(data.error || 'Error al unirse')
         return
       }
 
