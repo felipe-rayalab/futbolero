@@ -34,15 +34,16 @@ export default function LeaguesPage() {
       }
 
       const { data, error } = await supabase
-        .from('leagues')
-        .select('id, name, code')
-      
+        .from('league_members')
+        .select('league:leagues!league_members_league_id_fkey(id, name, code)')
+        .eq('user_id', user.id)
+
       if (error) {
         console.error('Error loading leagues:', error)
       }
-      
+
       if (data) {
-        setLeagues(data)
+        setLeagues(data.map((row: any) => row.league).filter(Boolean))
       }
     } catch (e) {
       console.error('Exception:', e)

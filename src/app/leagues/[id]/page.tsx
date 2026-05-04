@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import Header from '@/components/Header'
@@ -21,8 +22,9 @@ export default async function LeaguePage({ params }: Props) {
 
   if (!league) notFound()
 
-  // Single query: members + profiles + aggregated scores
-  const { data: members } = await supabase
+  // Single query: members + profiles + aggregated scores (admin bypasses RLS on league_members)
+  const admin = createAdminClient()
+  const { data: members } = await admin
     .from('league_members')
     .select(`
       user_id,
