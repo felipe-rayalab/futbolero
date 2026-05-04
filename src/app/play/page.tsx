@@ -113,6 +113,7 @@ export default function PlayPage() {
         team1:teams!matches_team1_id_fkey(name, code, flag_url),
         team2:teams!matches_team2_id_fkey(name, code, flag_url)
       `)
+      .neq('phase', 'groups')
       .order('match_date', { ascending: true })
 
     if (data) {

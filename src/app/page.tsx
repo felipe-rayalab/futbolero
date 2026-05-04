@@ -21,12 +21,12 @@ export default async function Home() {
       <main className="relative z-10 container mx-auto px-4 py-8 sm:py-16">
         <div className="text-center mb-16">
           <div className="inline-block mb-6 px-4 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-full">
-            <span className="text-emerald-400 text-sm font-medium">🏆 Temporada 2026</span>
+            <span className="text-emerald-400 text-sm font-medium">⭐ Champions League 2025-26</span>
           </div>
-          
+
           <h1 className="text-5xl sm:text-7xl font-bold text-white mb-6 tracking-tight">
-            Mundial
-            <span className="bg-gradient-to-r from-emerald-400 via-blue-400 to-purple-400 text-transparent bg-clip-text"> 2026</span>
+            Champions
+            <span className="bg-gradient-to-r from-emerald-400 via-blue-400 to-purple-400 text-transparent bg-clip-text"> League</span>
           </h1>
           
           <p className="text-lg sm:text-xl text-slate-400 mb-10 max-w-md mx-auto">
@@ -69,7 +69,7 @@ export default async function Home() {
               </div>
               <h3 className="text-xl font-semibold text-white mb-2">Predice</h3>
               <p className="text-slate-400 text-sm leading-relaxed">
-                Ingresa tus pronósticos antes de cada partido del mundial
+                Ingresa tus pronósticos antes de cada partido
               </p>
               <div className="mt-4 text-emerald-400 text-sm font-medium flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                 <span>Hacer predicciones</span>
@@ -128,11 +128,11 @@ export default async function Home() {
         {/* Stats preview */}
         <div className="flex justify-center gap-8 sm:gap-16 mb-16">
           <div className="text-center">
-            <div className="text-3xl sm:text-4xl font-bold text-white mb-1">48</div>
+            <div className="text-3xl sm:text-4xl font-bold text-white mb-1">4</div>
             <div className="text-slate-500 text-sm">Equipos</div>
           </div>
           <div className="text-center">
-            <div className="text-3xl sm:text-4xl font-bold text-white mb-1">104</div>
+            <div className="text-3xl sm:text-4xl font-bold text-white mb-1">3</div>
             <div className="text-slate-500 text-sm">Partidos</div>
           </div>
           <div className="text-center">
