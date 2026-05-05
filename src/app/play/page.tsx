@@ -122,6 +122,7 @@ export default function PlayPage() {
         team2:teams!matches_team2_id_fkey(name, code, flag_url)
       `)
       .neq('phase', 'groups')
+      .neq('week_number', 99)
       .order('match_date', { ascending: true })
 
     if (data) {
