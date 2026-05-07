@@ -143,9 +143,9 @@ export default async function Home() {
     team2:teams!matches_team2_id_fkey(name, code)`
 
   const [{ data: liveMatches }, { data: finishedMatches }, { data: upcomingMatches }] = await Promise.all([
-    supabase.from('matches').select(matchSelect).eq('status', 'live').order('match_date'),
-    supabase.from('matches').select(matchSelect).eq('status', 'finished').order('match_date', { ascending: false }).limit(2),
-    supabase.from('matches').select(matchSelect).eq('status', 'scheduled').order('match_date').limit(1),
+    supabase.from('matches').select(matchSelect).eq('status', 'live').neq('week_number', 99).order('match_date'),
+    supabase.from('matches').select(matchSelect).eq('status', 'finished').neq('week_number', 99).order('match_date', { ascending: false }).limit(2),
+    supabase.from('matches').select(matchSelect).eq('status', 'scheduled').neq('week_number', 99).order('match_date').limit(1),
   ])
 
   // Build the 3 cards: [last played / live / next]
