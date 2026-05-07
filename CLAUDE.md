@@ -114,7 +114,14 @@ Max per match: 12 pts (groups) → 17 pts (final).
 
 ### Live Score Sync
 
-An external cron (cron-job.org) calls `https://futbolero.vercel.app/api/cron/update-scores` every minute during matches.
+An external cron (**cron-job.org**) calls `https://futbolero.vercel.app/api/cron/update-scores` every minute during matches.
+
+**Manual activation checklist (do before each match day):**
+1. Log in to cron-job.org and verify the job is **enabled** (not paused)
+2. URL must be: `https://futbolero.vercel.app/api/cron/update-scores`
+3. Header must be: `Authorization: Bearer <ADMIN_SECRET>`
+   - To get the secret: Vercel dashboard → Project → Settings → Environment Variables → `ADMIN_SECRET`
+4. No Vercel cron is configured (`vercel.json` is empty) — cron-job.org is the only scheduler
 
 The route (`src/app/api/cron/update-scores/route.ts`):
 1. Fetches a 3-day window (yesterday→tomorrow) from **football-data.org** — wide window handles CET/UTC timezone drift
