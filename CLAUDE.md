@@ -2,96 +2,147 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Project Overview
+## Project
 
-El Futbolero is a FIFA World Cup 2026 prediction game. Users predict match scores, earn points, compete globally or inside private leagues, and challenge each other 1v1.
+**El Futbolero** — a FIFA World Cup 2026 predictions game (polla del mundial) in Spanish. Users predict match scores to earn points and compete on leaderboards and within private leagues.
 
 ## Commands
 
 ```bash
-npm run dev      # Start dev server at localhost:3000
+npm run dev      # Start dev server (localhost:3000)
 npm run build    # Production build
-npm run lint     # ESLint check
+npm run lint     # ESLint
 ```
 
-There are no automated tests. Manual browser testing is required for UI changes.
+No test suite is configured. Manual browser testing required for UI changes.
 
-### Supabase migrations
+### Supabase
 
 ```bash
-supabase db push          # Apply local migrations to remote
-supabase migration new <name>   # Create a new migration file
+SUPABASE_DB_PASSWORD=<pwd> supabase db push   # Push local migrations to remote
+supabase migration new <name>                  # Create a new migration file
 ```
 
-### Triggering scoring manually (admin)
+Project ref: `pasuasnbgjrtlphtelfq`. DB password and API keys are in memory (`project_infra.md`).
 
-```bash
-# Mark match finished and calculate scores
-curl -X POST https://<host>/api/admin/match \
-  -H "Authorization: Bearer $ADMIN_SECRET" \
-  -H "Content-Type: application/json" \
-  -d '{"matchId": 1, "team1Score": 2, "team2Score": 1, "status": "finished"}'
-```
+## Stack
 
-## Environment Variables
+- **Next.js 15** (App Router, TypeScript, `src/` directory)
+- **Supabase** — PostgreSQL + Auth (Google OAuth) + Realtime
+- **Tailwind CSS 4** + **shadcn/ui** (New York style, Lucide icons)
+- **Vercel** for deployment (auto-deploys on push to `main`)
 
-See `.env.example`. Required in `.env.local`:
+Path alias: `@/*` → `./src/*`
 
-| Variable | Purpose |
-|---|---|
-| `NEXT_PUBLIC_SUPABASE_URL` | Public Supabase endpoint |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Client-side anon key |
-| `SUPABASE_SERVICE_ROLE_KEY` | Server-only, bypasses RLS |
-| `ADMIN_SECRET` | Bearer token for `/api/admin/*` routes |
-| `FOOTBALL_DATA_API_KEY` | football-data.org live scores API |
+## Git workflow
+
+**Always `git fetch origin && git status` before starting work.** The remote may have commits from other sessions. If behind, do `git pull --rebase` before making changes. This avoids merge conflicts on push.
 
 ## Architecture
 
-**Stack:** Next.js (App Router) + TypeScript + Supabase (Postgres + Auth) + Tailwind CSS + shadcn/ui. Deployed on Vercel.
+### Auth & Middleware
 
-### Supabase client usage
+[src/middleware.ts](src/middleware.ts) refreshes Supabase session cookies on every request and redirects unauthenticated users to `/login?redirectTo=...` for protected routes: `/play`, `/leagues`, `/profile`, `/api/admin`.
 
-Three separate clients in `src/lib/supabase/`:
-- `server.ts` — `createClient()` for Server Components and API routes (uses cookies, respects RLS)
-- `client.ts` — browser-side client for Client Components
-- `admin.ts` — `createAdminClient()` with service role key, bypasses RLS — only use for server-side scoring/admin operations
+OAuth callback: `/auth/callback`. Logout: `/auth/signout`.
 
-### API routes
+### Supabase Clients
 
-- `POST /api/admin/match` — updates match status/scores and calls the DB scoring function. Protected by `ADMIN_SECRET` via timing-safe comparison in `src/lib/auth-admin.ts`.
-- `GET /api/cron/update-scores` — polls football-data.org for live match data and triggers scoring. Called every minute by a cron job (Vercel Pro or cron-job.org) during the tournament.
+Three clients in `src/lib/supabase/`:
 
-### Scoring logic
+| File | Usage |
+|------|-------|
+| `server.ts` | Server Components & API routes — uses cookies, respects RLS |
+| `client.ts` | Client Components (browser) |
+| `admin.ts` | Server-only, service role key, **bypasses RLS** — use only in trusted server contexts |
 
-Implemented entirely in the database as `calculate_and_save_scores(p_match_id uuid)` (see `supabase/migrations/`). Points are awarded as follows:
+### Pages
 
-- **Winner/draw points** by phase: Groups=2, Round32/16=3, Quarters/Semis=5, Semis/3rd/Final=7
-- **Goal points** per team: 0–1 goals=1pt, 2=2pt, 3=3pt, 4=4pt, 5+=5pt
-- A "pleno" (exact score prediction) is flagged on the `scores` row
+| Route | Type | Purpose |
+|-------|------|---------|
+| `/` | Server | Hero landing with 3 match cards (last played, live, next) |
+| `/login` | Server | Google OAuth |
+| `/play` | Client (`'use client'`) | Enter/edit predictions, auto-saves with debounce, inputs lock 5min before match |
+| `/leaderboard` | Server | Global ranking + weekly tabs (Semana 1–4) |
+| `/leagues` | Server | Create/join/list user's private leagues |
+| `/leagues/[id]` | Server | League-specific leaderboard |
+| `/profile/[id]` | Server | Public profile — avatar, stats, match-by-match history |
+| `/profile` | Server | Own profile redirect |
+| `/rules` | Server | Points system explanation |
+| `/admin` | Server | Admin panel (users, leagues, predictions) — restricted to admin user ID |
 
-Tiebreaker order: total points → pleno count → max single-match score.
+### Home page match cards (`/`)
 
-### Leaderboards
+`src/app/page.tsx` shows 3 match cards:
+- If there's a live match: [last finished, live, next scheduled]
+- If no live match: [2nd-last finished, last finished, next scheduled]
 
-Two Postgres views: `v_leaderboard_general` (all-time) and `v_leaderboard_weekly` (scoped by `week_number` on matches). Both join `profiles → scores → matches`.
+Each card shows: label + date (top), flag + team name + prediction box (if user predicted), result row with score + pts badge (if live/finished), status badge (bottom). Fetches user scores and predictions server-side.
 
-### Prediction deadline
+### Admin panel (`/admin`)
 
-Enforced in the UI at `/play/[id]`: predictions are locked 5 minutes before `match_date`. Deadline is checked client-side only.
+Protected by hardcoded `ADMIN_USER_ID` in `src/app/admin/page.tsx`. Tabs: Usuarios (searchable), Ligas (league selector + member leaderboard), Predicciones (all predictions with match status).
 
-### Key data
+### Database (Supabase/PostgreSQL)
 
-- 48 teams with 3-letter TLA codes matching football-data.org's API
-- 72 group stage matches seeded in migrations 005–006
-- Knockout fixtures must be added manually as results come in (not yet implemented)
+Key tables: `profiles`, `teams`, `matches`, `predictions`, `scores`, `leagues`, `league_members`, `prizes`.
 
-### Middleware
+Migrations in [supabase/migrations/](supabase/migrations/). RLS enabled on all tables.
 
-`src/middleware.ts` refreshes Supabase session cookies on every request and redirects unauthenticated users away from protected routes (`/play`, `/leagues`, `/challenges`, `/profile`).
+**Views:**
+- `v_leaderboard_general` — all-time global ranking
+- `v_leaderboard_weekly` — filtered by `matches.week_number`
+- `v_leaderboard_league` — filtered by `league_id`
 
-## Pending Work (from TODO.md)
+`is_pleno = true` on a `scores` row means exact score prediction.
 
-- Knockout phase fixtures (Round of 32 → Final) — add once group stage concludes
-- Push/email notifications for challenge invites
-- Avatar upload to Supabase Storage
-- Pre-tournament checklist: verify TLA mapping, activate cron, test with a sample match
+### Scoring Pipeline
+
+Points calculated automatically via DB trigger `on_match_score_change` on `matches` (migration `004_scoring_trigger.sql`). Fires when `status`, `team1_score`, or `team2_score` changes:
+
+- `status → 'live'`: calculates scores for all predictors
+- Score changes while `'live'`: recalculates in real-time
+- `status → 'finished'`: final calculation, sets `is_final = true` — no further updates
+
+**Never manually write to `scores`** — always update `matches` and let the trigger cascade.
+
+Scoring rules (from [RULES.md](RULES.md)):
+1. **Winner/draw**: 2 pts (groups) → 7 pts (semis/final)
+2. **Goals per team**: 0–1=1pt, 2=2pt, 3=3pt, 4=4pt, 5+=5pt (90-minute result only)
+
+Max per match: 12 pts (groups) → 17 pts (final).
+
+### Live Score Sync
+
+An external cron (cron-job.org) calls `https://futbolero.vercel.app/api/cron/update-scores` every minute during matches.
+
+The route (`src/app/api/cron/update-scores/route.ts`):
+1. Fetches a 3-day window (yesterday→tomorrow) from **football-data.org** — wide window handles CET/UTC timezone drift
+2. Filters `IN_PLAY`, `PAUSED`, `FINISHED` matches
+3. Looks up matches in our DB by `"HOMECODE-AWAYCODE"` TLA key
+4. Updates `matches.status`, `team1_score`, `team2_score` via admin client
+5. Scoring trigger fires automatically
+
+`teams.code` must match football-data.org TLA codes exactly. Known fixes applied: Atlético Madrid = `ATL` (not `ATM`), Bayern = `FCB` (not `BAY`).
+
+API token: in `FOOTBALL_DATA_API_TOKEN` env var (also in memory `project_infra.md`).
+
+### Prediction Locking
+
+Inputs lock 5 minutes before `match_date`. Enforced client-side in `/play`. The play page re-renders every 30s to enforce deadline as time passes. Locked matches show the predicted score in a read-only box (or 🔒 if no prediction).
+
+### Component Conventions
+
+- Server Components (async) in `app/` for auth checks and initial data fetching
+- `'use client'` for interactive components (predictions, admin tabs, header)
+- `export const dynamic = 'force-dynamic'` on pages that must not be cached (leaderboard, home, profile, admin)
+- UI primitives from `src/components/ui/` (shadcn/ui — don't modify directly; use `npx shadcn add`)
+- `cn()` from `@/lib/utils` for conditional class composition
+
+### Styling
+
+Dark theme with gradient backgrounds (`from-slate-950 via-slate-900 to-slate-950`) and glassmorphism (`bg-white/5 border border-white/10 backdrop-blur`). Global tokens in `src/app/globals.css`.
+
+## Removed Features
+
+- **Challenges / Desafíos** — 1v1 duel feature was removed. The `/challenges` page, challenge modal in `/play`, leagueMates fetching, and nav link have all been deleted. The `challenges` DB table still exists in migrations but is unused.
