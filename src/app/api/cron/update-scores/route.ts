@@ -34,18 +34,10 @@ export async function GET(req: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   if (!ourMatches?.length) return NextResponse.json({ ok: true, message: 'Sin partidos activos' })
 
-  // Obtener partidos del día desde football-data.org (WC + CL en paralelo)
+  // Obtener partidos del día desde football-data.org
   let fdMatches: FDMatch[] = []
   try {
-    const [wcMatches, clMatches] = await Promise.allSettled([
-      getMatchesByDate('WC', dateFrom, dateTo),
-      getMatchesByDate('CL', dateFrom, dateTo),
-    ])
-    if (wcMatches.status === 'fulfilled') fdMatches.push(...wcMatches.value)
-    if (clMatches.status === 'fulfilled') fdMatches.push(...clMatches.value)
-    if (wcMatches.status === 'rejected' && clMatches.status === 'rejected') {
-      return NextResponse.json({ error: String(wcMatches.reason) }, { status: 502 })
-    }
+    fdMatches = await getMatchesByDate('WC', dateFrom, dateTo)
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 502 })
   }
