@@ -4,7 +4,6 @@ import { createClient } from '@/lib/supabase/client'
 import { useEffect, useState, useRef, useCallback } from 'react'
 import Link from 'next/link'
 import Header from '@/components/Header'
-import Avatar from '@/components/Avatar'
 
 type Match = {
   id: number
@@ -25,19 +24,6 @@ type Prediction = {
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error'
 
-type LeagueMate = {
-  id: string
-  display_name: string | null
-  username: string | null
-  avatar_url: string | null
-}
-
-type ChallengeModal = {
-  matchId: number
-  matchLabel: string
-}
-
-type ChallengeStatus = 'idle' | 'sending' | 'sent' | 'error' | 'duplicate'
 
 // Flag emoji mapping
 const flagEmojis: Record<string, string> = {
@@ -59,9 +45,6 @@ export default function PlayPage() {
   const [loading, setLoading] = useState(true)
   const [activePhase, setActivePhase] = useState<string>('')
   const [userId, setUserId] = useState<string | null>(null)
-  const [leagueMates, setLeagueMates] = useState<LeagueMate[]>([])
-  const [challengeModal, setChallengeModal] = useState<ChallengeModal | null>(null)
-  const [challengeStatus, setChallengeStatus] = useState<ChallengeStatus>('idle')
   const supabase = createClient()
   const debounceTimers = useRef<Record<number, NodeJS.Timeout>>({})
 
@@ -80,37 +63,8 @@ export default function PlayPage() {
   async function loadData() {
     const { data: { user } } = await supabase.auth.getUser()
     if (user) setUserId(user.id)
-    await Promise.all([loadMatches(), loadPredictions(), user ? loadLeagueMates(user.id) : Promise.resolve()])
+    await Promise.all([loadMatches(), loadPredictions()])
     setLoading(false)
-  }
-
-  async function loadLeagueMates(uid: string) {
-    const { data: myLeagues } = await supabase
-      .from('league_members')
-      .select('league_id')
-      .eq('user_id', uid)
-
-    if (!myLeagues?.length) return
-
-    const leagueIds = myLeagues.map(l => l.league_id)
-    const { data: members } = await supabase
-      .from('league_members')
-      .select('user_id, profiles!inner(id, display_name, username, avatar_url)')
-      .in('league_id', leagueIds)
-      .neq('user_id', uid)
-
-    if (!members) return
-
-    const seen = new Set<string>()
-    const mates: LeagueMate[] = []
-    for (const m of members) {
-      const p = m.profiles as any
-      if (!seen.has(m.user_id)) {
-        seen.add(m.user_id)
-        mates.push({ id: m.user_id, display_name: p.display_name, username: p.username, avatar_url: p.avatar_url })
-      }
-    }
-    setLeagueMates(mates)
   }
 
   async function loadMatches() {
@@ -215,25 +169,6 @@ export default function PlayPage() {
         savePrediction(matchId, team1Val, team2Val)
       }, 500)
     }
-  }
-
-  async function sendChallenge(challengedId: string) {
-    if (!userId || !challengeModal) return
-    setChallengeStatus('sending')
-    const { error } = await supabase
-      .from('challenges')
-      .insert({ match_id: challengeModal.matchId, challenger_id: userId, challenged_id: challengedId })
-    if (error) {
-      setChallengeStatus(error.code === '23505' ? 'duplicate' : 'error')
-    } else {
-      setChallengeStatus('sent')
-    }
-  }
-
-  function openChallengeModal(match: Match) {
-    const label = `${getFlag(match.team1?.code)} ${match.team1?.name ?? 'TBD'} vs ${match.team2?.name ?? 'TBD'} ${getFlag(match.team2?.code)}`
-    setChallengeModal({ matchId: match.id, matchLabel: label })
-    setChallengeStatus('idle')
   }
 
   function canPredict(matchDate: string) {
@@ -441,15 +376,6 @@ export default function PlayPage() {
                   {/* Footer */}
                   <div className="flex justify-between items-center text-xs pt-3 border-t border-white/5">
                     <span className="text-slate-500">Máx <span className="text-emerald-400 font-semibold">{getMaxPoints(match.phase)} pts</span></span>
-                    {editable && userId && (
-                      <button
-                        onClick={() => openChallengeModal(match)}
-                        aria-label={`Desafiar a alguien en ${match.team1?.name} vs ${match.team2?.name}`}
-                        className="flex items-center gap-1 text-orange-400 hover:text-orange-300 transition-colors font-medium focus-visible:outline-none focus-visible:underline"
-                      >
-                        ⚔️ Desafiar
-                      </button>
-                    )}
                   </div>
 
                   {/* Result if finished */}
@@ -465,79 +391,6 @@ export default function PlayPage() {
         )}
       </main>
 
-      {/* Challenge modal */}
-      {challengeModal && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="w-full max-w-sm bg-slate-900 border border-white/10 rounded-2xl p-6 shadow-2xl">
-            <div className="flex justify-between items-start mb-4">
-              <div>
-                <h3 className="text-white font-bold text-lg">⚔️ Desafiar</h3>
-                <p className="text-slate-400 text-sm mt-0.5 leading-tight">{challengeModal.matchLabel}</p>
-              </div>
-              <button
-                onClick={() => setChallengeModal(null)}
-                aria-label="Cerrar modal"
-                className="text-slate-500 hover:text-white transition-colors text-xl leading-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50 rounded"
-              >
-                ×
-              </button>
-            </div>
-
-            {challengeStatus === 'sent' ? (
-              <div className="text-center py-4">
-                <div className="text-4xl mb-3">🎯</div>
-                <p className="text-white font-semibold">¡Desafío enviado!</p>
-                <p className="text-slate-400 text-sm mt-1">Tu rival debe aceptarlo antes del partido</p>
-                <button
-                  onClick={() => setChallengeModal(null)}
-                  className="mt-4 w-full bg-white/10 text-white py-2.5 rounded-xl hover:bg-white/20 transition-all"
-                >
-                  Cerrar
-                </button>
-              </div>
-            ) : leagueMates.length === 0 ? (
-              <div className="text-center py-4">
-                <div className="text-3xl mb-3">👥</div>
-                <p className="text-white font-semibold mb-1">Sin rivales disponibles</p>
-                <p className="text-slate-400 text-sm mb-4">
-                  Invita amigos a tu liga para poder desafiarlos.
-                </p>
-                <Link
-                  href="/leagues"
-                  onClick={() => setChallengeModal(null)}
-                  className="inline-block bg-gradient-to-r from-purple-500 to-purple-600 text-white text-sm font-semibold px-5 py-2.5 rounded-xl hover:shadow-lg transition-all"
-                >
-                  Ir a Ligas
-                </Link>
-              </div>
-            ) : (
-              <>
-                <p className="text-slate-400 text-sm mb-4">Elige a quién desafiar:</p>
-                <div className="space-y-2 max-h-64 overflow-y-auto">
-                  {leagueMates.map(mate => (
-                    <button
-                      key={mate.id}
-                      onClick={() => sendChallenge(mate.id)}
-                      disabled={challengeStatus === 'sending'}
-                      className="w-full flex items-center gap-3 p-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 hover:border-orange-500/30 transition-all disabled:opacity-50 text-left"
-                    >
-                      <Avatar url={mate.avatar_url} name={mate.display_name ?? mate.username} size={36} />
-                      <span className="text-white font-medium">
-                        {mate.display_name ?? mate.username ?? 'Anónimo'}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-                {(challengeStatus === 'error' || challengeStatus === 'duplicate') && (
-                  <p className="text-red-400 text-sm mt-3 text-center">
-                    {challengeStatus === 'duplicate' ? 'Ya existe un desafío para este partido con ese jugador' : 'Error al enviar el desafío'}
-                  </p>
-                )}
-              </>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   )
 }
