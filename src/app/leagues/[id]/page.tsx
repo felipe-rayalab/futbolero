@@ -104,8 +104,10 @@ export default async function LeaguePage({ params }: Props) {
                   {index > 2 && <span className="text-slate-500 font-medium">{index + 1}</span>}
                 </div>
                 <div className="col-span-5 flex items-center gap-3">
-                  <Avatar url={player.avatar_url} name={player.display_name} size={36} />
-                  <span className="text-white font-medium truncate">{player.display_name}</span>
+                  <Link href={`/profile/${player.id}`} className="flex items-center gap-3 hover:opacity-80 transition-opacity min-w-0">
+                    <Avatar url={player.avatar_url} name={player.display_name} size={36} />
+                    <span className="text-white font-medium truncate">{player.display_name}</span>
+                  </Link>
                 </div>
                 <div className="col-span-2 text-center text-white font-bold text-lg">{player.total_points}</div>
                 <div className="col-span-2 text-center text-slate-400">{player.plenos}</div>
