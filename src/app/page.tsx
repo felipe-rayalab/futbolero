@@ -194,12 +194,12 @@ export default async function Home() {
       <main className="relative z-10 container mx-auto px-4 py-8 sm:py-16">
         <div className="text-center mb-16">
           <div className="inline-block mb-6 px-4 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-full">
-            <span className="text-emerald-400 text-sm font-medium">⭐ Champions League 2025-26</span>
+            <span className="text-emerald-400 text-sm font-medium">🏆 Mundial USA / Canada / Mexico</span>
           </div>
 
           <h1 className="text-5xl sm:text-7xl font-bold text-white mb-6 tracking-tight">
-            Champions
-            <span className="bg-gradient-to-r from-emerald-400 via-blue-400 to-purple-400 text-transparent bg-clip-text"> League</span>
+            Mundial
+            <span className="bg-gradient-to-r from-emerald-400 via-blue-400 to-purple-400 text-transparent bg-clip-text"> 2026</span>
           </h1>
           
           <p className="text-lg sm:text-xl text-slate-400 mb-10 max-w-md mx-auto">
@@ -338,7 +338,7 @@ export default async function Home() {
       {/* Footer */}
       <footer className="relative z-10 p-6 text-center">
         <p className="text-slate-600 text-sm">
-          El Futbolero © 2026 — Hecho con ❤️ para el Mundial
+          El Futbolero © 2026 — Hecho con ❤️ para Nerds por ANAM
         </p>
       </footer>
     </div>

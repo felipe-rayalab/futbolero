@@ -22,7 +22,7 @@ export default function RootLayout({
     <html lang="es">
       <body className={`${inter.variable} font-sans antialiased`}>
         {children}
-        {process.env.NODE_ENV === "development" && <Agentation />}
+        {process.env.NODE_ENV === "development" && <Agentation serverUrl="http://localhost:4747" />}
       </body>
     </html>
   );
