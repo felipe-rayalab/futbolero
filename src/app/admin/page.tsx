@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import Header from '@/components/Header'
 import Avatar from '@/components/Avatar'
 import AdminUsersPanel from './AdminUsersPanel'
+import AdminTabs from './AdminTabs'
 
 const ADMIN_EMAIL = 'felipe@rayalab.cl'
 
@@ -63,11 +64,11 @@ export default async function AdminPage() {
           <p className="text-slate-500 text-sm mt-2">{enrichedProfiles.length} usuarios · {totalPredictions} predicciones</p>
         </div>
 
-        <div className="space-y-6">
-
-          {/* Users panel */}
-          <AdminUsersPanel profiles={enrichedProfiles} />
-          {(matches || []).map(match => {
+        <AdminTabs
+          jugadores={<AdminUsersPanel profiles={enrichedProfiles} />}
+          predicciones={
+            <div className="space-y-6">
+            {(matches || []).map(match => {
             const t1 = match.team1 as any
             const t2 = match.team2 as any
             const preds = byMatch[match.id] || []
@@ -146,7 +147,9 @@ export default async function AdminPage() {
               </div>
             )
           })}
-        </div>
+            </div>
+          }
+        />
       </main>
     </div>
   )
