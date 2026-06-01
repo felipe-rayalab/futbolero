@@ -142,7 +142,7 @@ The route (`src/app/api/cron/update-scores/route.ts`):
 
 `teams.code` must match football-data.org TLA codes exactly. Known fixes applied: Atlético Madrid = `ATL` (not `ATM`), Bayern = `FCB` (not `BAY`).
 
-API token: in `FOOTBALL_DATA_API_TOKEN` env var (also in memory `project_infra.md`).
+API token: in `FOOTBALL_DATA_API_KEY` env var (also in memory `project_infra.md`).
 
 ### Prediction Locking
 
