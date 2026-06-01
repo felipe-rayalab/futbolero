@@ -68,8 +68,9 @@ Three clients in `src/lib/supabase/`:
 | `/leagues/[id]` | Server | League-specific leaderboard |
 | `/profile/[id]` | Server | Public profile — avatar, stats, match-by-match history |
 | `/profile` | Server | Own profile redirect |
-| `/rules` | Server | Points system explanation |
-| `/admin` | Server | Admin panel (users, leagues, predictions) — restricted to admin user ID |
+| `/rules` | Server | Points system explanation + cuota info |
+| `/premios` | Server | Prizes page — sponsor notice + pozo info |
+| `/admin` | Server | Admin panel — restricted to `felipe@rayalab.cl` |
 
 ### Home page match cards (`/`)
 
@@ -81,11 +82,20 @@ Each card shows: label + date (top), flag + team name + prediction box (if user 
 
 ### Admin panel (`/admin`)
 
-Protected by hardcoded `ADMIN_USER_ID` in `src/app/admin/page.tsx`. Tabs: Usuarios (searchable), Ligas (league selector + member leaderboard), Predicciones (all predictions with match status).
+Protected by hardcoded `ADMIN_EMAIL` in `src/app/admin/page.tsx`. Two tabs:
+
+- **Jugadores** — lists all registered users with email, avatar, `has_paid` toggle (persisted to DB), and inline-editable `notes` field (free text, e.g. "amigo de Felipe"). Uses Server Actions in `src/app/admin/actions.ts`.
+- **Predicciones** — match-by-match view of all predictions with Pleno / Ganador / Error badges.
+
+Client components: `AdminTabs.tsx` (tab switcher), `AdminUsersPanel.tsx` (users list with optimistic UI). Both use Server Actions (`togglePaid`, `updateNotes`) that call `revalidatePath('/admin')` after each mutation.
 
 ### Database (Supabase/PostgreSQL)
 
 Key tables: `profiles`, `teams`, `matches`, `predictions`, `scores`, `leagues`, `league_members`, `prizes`.
+
+**`profiles` admin fields** (added migration `015_profile_admin_fields.sql`):
+- `has_paid boolean DEFAULT false` — toggled from admin panel to track cuota payment
+- `notes text` — free-text admin note per player (e.g. relationship to group)
 
 Migrations in [supabase/migrations/](supabase/migrations/). RLS enabled on all tables.
 
