@@ -86,13 +86,6 @@ export default function RulesPage() {
             </div>
           </div>
 
-          {/* Cuota */}
-          <div className="bg-gradient-to-br from-yellow-500/10 to-white/5 border border-yellow-500/20 rounded-2xl p-6">
-            <h2 className="text-lg font-semibold text-white mb-2">💰 Cuota de participación</h2>
-            <p className="text-slate-400">La cuota de participación será de <span className="text-yellow-400 font-semibold">$25.000 pesos</span>. El pozo será repartido entre los primeros 5 lugares.</p>
-            <p className="text-slate-500 text-sm mt-2">Ya daremos las coordenadas de depósito de la cuota.</p>
-          </div>
-
           {/* Tiebreakers */}
           <div className="bg-gradient-to-br from-white/10 to-white/5 border border-white/10 rounded-2xl p-6">
             <h2 className="text-lg font-semibold text-white mb-4">⚖️ Desempate</h2>
@@ -110,6 +103,13 @@ export default function RulesPage() {
                 </li>
               ))}
             </ol>
+          </div>
+
+          {/* Cuota */}
+          <div className="bg-gradient-to-br from-yellow-500/10 to-white/5 border border-yellow-500/20 rounded-2xl p-6">
+            <h2 className="text-lg font-semibold text-white mb-2">💰 Cuota de participación</h2>
+            <p className="text-slate-400">La cuota de participación será de <span className="text-yellow-400 font-semibold">$25.000 pesos</span>. El pozo será repartido entre los primeros 5 lugares.</p>
+            <p className="text-slate-500 text-sm mt-2">Ya daremos las coordenadas de depósito de la cuota.</p>
           </div>
 
         </div>
