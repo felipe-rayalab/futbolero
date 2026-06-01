@@ -3,8 +3,11 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import Header from '@/components/Header'
 import Avatar from '@/components/Avatar'
+import AdminUsersPanel from './AdminUsersPanel'
 
 const ADMIN_EMAIL = 'felipe@rayalab.cl'
+
+export const dynamic = 'force-dynamic'
 
 export default async function AdminPage() {
   const supabase = await createClient()
@@ -13,6 +16,17 @@ export default async function AdminPage() {
   if (!user || user.email !== ADMIN_EMAIL) redirect('/')
 
   const admin = createAdminClient()
+
+  // All profiles with auth emails
+  const { data: authUsers } = await admin.auth.admin.listUsers()
+  const emailMap = Object.fromEntries((authUsers?.users ?? []).map(u => [u.id, u.email ?? null]))
+
+  const { data: profiles } = await admin
+    .from('profiles')
+    .select('id, display_name, username, avatar_url, has_paid, notes')
+    .order('display_name', { ascending: true })
+
+  const enrichedProfiles = (profiles ?? []).map(p => ({ ...p, email: emailMap[p.id] ?? null }))
 
   // All matches with teams
   const { data: matches } = await admin
@@ -26,8 +40,6 @@ export default async function AdminPage() {
     .select('match_id, team1_score, team2_score, updated_at, profiles(id, display_name, username, avatar_url)')
     .order('updated_at', { ascending: false })
 
-  const matchMap = Object.fromEntries((matches || []).map(m => [m.id, m]))
-
   // Group predictions by match
   const byMatch: Record<number, any[]> = {}
   for (const p of predictions || []) {
@@ -36,7 +48,6 @@ export default async function AdminPage() {
   }
 
   // Stats
-  const totalUsers = new Set((predictions || []).map((p: any) => p.profiles?.id)).size
   const totalPredictions = predictions?.length ?? 0
 
   return (
@@ -48,11 +59,14 @@ export default async function AdminPage() {
           <div className="inline-block mb-4 px-4 py-1.5 bg-red-500/10 border border-red-500/20 rounded-full">
             <span className="text-red-400 text-sm font-medium">🔒 Admin</span>
           </div>
-          <h1 className="text-4xl font-bold text-white">Panel de Predicciones</h1>
-          <p className="text-slate-500 text-sm mt-2">{totalUsers} usuarios · {totalPredictions} predicciones</p>
+          <h1 className="text-4xl font-bold text-white">Panel Admin</h1>
+          <p className="text-slate-500 text-sm mt-2">{enrichedProfiles.length} usuarios · {totalPredictions} predicciones</p>
         </div>
 
         <div className="space-y-6">
+
+          {/* Users panel */}
+          <AdminUsersPanel profiles={enrichedProfiles} />
           {(matches || []).map(match => {
             const t1 = match.team1 as any
             const t2 = match.team2 as any
