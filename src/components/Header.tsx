@@ -17,6 +17,7 @@ const navItems = [
   { href: '/leaderboard', label: 'Ranking',   color: 'text-blue-400    bg-blue-500/10'    },
   { href: '/leagues',     label: 'Ligas',     color: 'text-purple-400  bg-purple-500/10'  },
   { href: '/rules',       label: 'Reglas',    color: 'text-emerald-400 bg-emerald-500/10' },
+  { href: '/premios',     label: 'Premios',   color: 'text-yellow-400  bg-yellow-500/10'  },
   { href: '/profile',     label: 'Perfil',    color: 'text-slate-200   bg-white/10'        },
 ]
 
