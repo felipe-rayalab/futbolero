@@ -249,6 +249,23 @@ export default async function Home() {
           </div>
         )}
 
+        {/* Calendar CTA */}
+        <div className="max-w-4xl mx-auto mb-10">
+          <div className="bg-white/5 border border-white/10 rounded-2xl px-6 py-4 flex items-center justify-between gap-4 flex-wrap">
+            <p className="text-slate-400 text-sm">
+              📅 No te quedes sin tus predicciones — agrega los partidos del Mundial a tu calendario
+            </p>
+            <a
+              href="https://www.fotmob.com/leagues/77/synccalendar/fifa-world-cup"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="shrink-0 text-sm font-medium text-emerald-400 hover:text-emerald-300 underline underline-offset-2 transition-colors"
+            >
+              Sincronizar calendario →
+            </a>
+          </div>
+        </div>
+
         {/* Feature Cards - Clickable */}
         <div className="grid sm:grid-cols-3 gap-4 sm:gap-6 max-w-4xl mx-auto mb-16">
           <Link 
