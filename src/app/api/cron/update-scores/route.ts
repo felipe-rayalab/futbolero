@@ -13,12 +13,16 @@ export async function GET(req: NextRequest) {
 
   const supabase = createAdminClient()
 
-  // Buscar partidos de hoy y mañana que no están terminados
+  // Buscar partidos de ayer, hoy y mañana que no están terminados.
+  // Ventana amplia para cubrir partidos que empiezan tarde en UTC y
+  // siguen en vivo después de medianoche (drift de zona horaria).
   const now = new Date()
+  const yesterday = new Date(now)
+  yesterday.setDate(yesterday.getDate() - 1)
   const tomorrow = new Date(now)
   tomorrow.setDate(tomorrow.getDate() + 1)
 
-  const dateFrom = now.toISOString().split('T')[0]
+  const dateFrom = yesterday.toISOString().split('T')[0]
   const dateTo = tomorrow.toISOString().split('T')[0]
 
   const { data: ourMatches, error } = await supabase
