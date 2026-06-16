@@ -25,3 +25,24 @@ export async function updateNotes(userId: string, notes: string) {
   await admin.from('profiles').update({ notes: notes || null }).eq('id', userId)
   revalidatePath('/admin')
 }
+
+export async function updateMatchScore({
+  match_id, status, team1_score, team2_score,
+}: {
+  match_id: number
+  status: 'live' | 'finished'
+  team1_score: number
+  team2_score: number
+}) {
+  await assertAdmin()
+  const admin = createAdminClient()
+  const { error } = await admin
+    .from('matches')
+    .update({ status, team1_score, team2_score })
+    .eq('id', match_id)
+  if (error) throw new Error(error.message)
+  revalidatePath('/admin')
+  revalidatePath('/')
+  revalidatePath('/leaderboard')
+  revalidatePath('/play')
+}

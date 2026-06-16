@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import Header from '@/components/Header'
 import Avatar from '@/components/Avatar'
 import AdminUsersPanel from './AdminUsersPanel'
+import AdminMatchesPanel from './AdminMatchesPanel'
 import AdminTabs from './AdminTabs'
 
 const ADMIN_EMAIL = 'felipe@rayalab.cl'
@@ -66,6 +67,7 @@ export default async function AdminPage() {
 
         <AdminTabs
           jugadores={<AdminUsersPanel profiles={enrichedProfiles} />}
+          partidos={<AdminMatchesPanel matches={(matches || []) as any} />}
           predicciones={
             <div className="space-y-6">
             {(matches || []).map(match => {
