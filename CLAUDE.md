@@ -63,7 +63,7 @@ Three clients in `src/lib/supabase/`:
 | `/` | Server | Hero landing with 3 match cards (last played, live, next) |
 | `/login` | Server | Google OAuth |
 | `/play` | Client (`'use client'`) | Enter/edit predictions, auto-saves with debounce, inputs lock 5min before match |
-| `/leaderboard` | Server | Global ranking + "Partido en Juego" tab (live match predictions) |
+| `/leaderboard` | Server | Global ranking + "Partido en Juego" tab (live match predictions + position changes) |
 | `/leagues` | Server | Create/join/list user's private leagues |
 | `/leagues/[id]` | Server | League-specific leaderboard |
 | `/profile/[id]` | Server | Public profile — avatar, stats, match-by-match history |
@@ -175,13 +175,16 @@ Dark theme with gradient backgrounds (`from-slate-950 via-slate-900 to-slate-950
 `/leaderboard?tab=live` — visible always; shows live match data only when `matches.status = 'live'`.
 
 - **Score card** at top: teams + flags + live score with pulsing red "EN VIVO" badge.
-- **Ranking table**: # | Jugador | Pts Actuales | Pronóstico | +Pts
+- **Ranking table (general)**: # | Jugador | Pts | Plenos | ↕ — "Partidos" column removed to make room.
+- **↕ column (general tab)**: position change vs ranking before the last finished match. Computed by fetching that match's `scores`, subtracting from each user's `total_points`, re-sorting, and diffing positions. Arrow ↑ green / ↓ red / `—` neutral; previous position shown below the arrow (e.g. `5°`).
+- **Ranking table (live tab)**: # | Jugador | Pts | Pronóstico | +Pts | ↕
   - **Pts Actuales** — `total_points` from `v_leaderboard_general`, which already includes live-match points (trigger recalculates on every score change).
   - **Pronóstico** — the user's prediction for the live match (`predictions.team1_score – team2_score`).
   - **+Pts** — points earned from this match specifically (`scores.points` for that `match_id`), shown in emerald; `—` if not yet calculated.
 - Only players who predicted the live match appear in this tab.
 - Data uses two parallel admin-client queries (predictions + scores by `match_id`) — no FK between those tables, so they cannot be nested in one Supabase select.
 - The tab shows a pulsing red dot when a live match exists.
+- **↕ column (live tab)**: compares each predictor's position before vs after live match points. Computed in JS by re-sorting predictors on `total_points - match_points` and diffing against current order.
 
 ## Removed Features
 

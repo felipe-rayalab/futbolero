@@ -21,6 +21,35 @@ function flag(code?: string | null) {
   return code ? (flagEmojis[code] ?? '🏳️') : '🏳️'
 }
 
+function PositionChange({ current, previous }: { current: number; previous: number | undefined }) {
+  if (previous === undefined || previous === 0) {
+    return <span className="text-slate-600 text-sm">—</span>
+  }
+  const diff = previous - current // positive = moved up
+  if (diff === 0) {
+    return (
+      <div className="flex flex-col items-center leading-tight">
+        <span className="text-slate-500 text-sm">—</span>
+        <span className="text-slate-600 text-xs">{previous}°</span>
+      </div>
+    )
+  }
+  if (diff > 0) {
+    return (
+      <div className="flex flex-col items-center leading-tight">
+        <span className="text-emerald-400 text-sm font-bold">↑</span>
+        <span className="text-slate-500 text-xs">{previous}°</span>
+      </div>
+    )
+  }
+  return (
+    <div className="flex flex-col items-center leading-tight">
+      <span className="text-red-400 text-sm font-bold">↓</span>
+      <span className="text-slate-500 text-xs">{previous}°</span>
+    </div>
+  )
+}
+
 type Props = {
   searchParams: Promise<{ tab?: string }>
 }
@@ -32,27 +61,56 @@ export default async function LeaderboardPage({ searchParams }: Props) {
   const supabase = await createClient()
   const admin = createAdminClient()
 
-  // General leaderboard — always fetched (used in both tabs)
-  const { data: generalData } = await supabase
-    .from('v_leaderboard_general')
-    .select('*')
-    .limit(100)
-  const leaderboard = generalData ?? []
+  // General leaderboard + live match — always needed
+  const [{ data: generalData }, { data: liveMatches }] = await Promise.all([
+    supabase.from('v_leaderboard_general').select('*').limit(100),
+    admin
+      .from('matches')
+      .select(`
+        id, team1_score, team2_score,
+        team1:teams!matches_team1_id_fkey(name, code),
+        team2:teams!matches_team2_id_fkey(name, code)
+      `)
+      .eq('status', 'live'),
+  ])
 
-  // Check for live match(es)
-  const { data: liveMatches } = await admin
-    .from('matches')
-    .select(`
-      id, team1_score, team2_score,
-      team1:teams!matches_team1_id_fkey(name, code),
-      team2:teams!matches_team2_id_fkey(name, code)
-    `)
-    .eq('status', 'live')
+  const leaderboard = generalData ?? []
   const liveMatch = liveMatches?.[0] ?? null
   const hasLive = !!liveMatch
 
-  // Live-tab ranking: predictions for live match + total points
-  let liveRanking: {
+  // --- General tab: position change vs last finished match ---
+  let prevPositionMap: Record<string, number> = {}
+  {
+    const { data: lastFinished } = await admin
+      .from('matches')
+      .select('id')
+      .eq('status', 'finished')
+      .order('match_date', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (lastFinished) {
+      const { data: lastScores } = await admin
+        .from('scores')
+        .select('user_id, points')
+        .eq('match_id', lastFinished.id)
+
+      const lastPtsMap = Object.fromEntries(
+        (lastScores ?? []).map(s => [s.user_id, s.points as number])
+      )
+      const prevRanking = leaderboard
+        .map(p => ({
+          id: p.id as string,
+          pts: (p.total_points as number) - (lastPtsMap[p.id] ?? 0),
+          plenos: p.plenos as number,
+        }))
+        .sort((a, b) => b.pts - a.pts || b.plenos - a.plenos)
+      prevRanking.forEach((p, i) => { prevPositionMap[p.id] = i + 1 })
+    }
+  }
+
+  // --- Live tab: predictions + scores for live match ---
+  type LivePlayer = {
     user_id: string
     display_name: string | null
     username: string | null
@@ -61,7 +119,9 @@ export default async function LeaderboardPage({ searchParams }: Props) {
     pred_team1: number
     pred_team2: number
     match_points: number | null
-  }[] = []
+    prev_position: number | undefined
+  }
+  let liveRanking: LivePlayer[] = []
 
   if (isLiveTab && liveMatch) {
     const [{ data: preds }, { data: matchScores }] = await Promise.all([
@@ -78,8 +138,8 @@ export default async function LeaderboardPage({ searchParams }: Props) {
         .eq('match_id', liveMatch.id),
     ])
 
-    const pointsMap = Object.fromEntries(leaderboard.map(p => [p.id, p.total_points as number]))
-    const matchPointsMap = Object.fromEntries((matchScores ?? []).map(s => [s.user_id, s.points]))
+    const totalPtsMap = Object.fromEntries(leaderboard.map(p => [p.id as string, p.total_points as number]))
+    const matchPtsMap = Object.fromEntries((matchScores ?? []).map(s => [s.user_id, s.points as number]))
 
     liveRanking = ((preds ?? []) as any[])
       .map(p => ({
@@ -87,12 +147,21 @@ export default async function LeaderboardPage({ searchParams }: Props) {
         display_name: p.profile?.display_name ?? null,
         username: p.profile?.username ?? null,
         avatar_url: p.profile?.avatar_url ?? null,
-        total_points: pointsMap[p.user_id] ?? 0,
+        total_points: totalPtsMap[p.user_id] ?? 0,
         pred_team1: p.team1_score as number,
         pred_team2: p.team2_score as number,
-        match_points: matchPointsMap[p.user_id] ?? null,
+        match_points: matchPtsMap[p.user_id] ?? null,
+        prev_position: undefined as number | undefined,
       }))
       .sort((a, b) => b.total_points - a.total_points)
+
+    // Compute previous positions among predictors (before live match)
+    const livePrevRanking = [...liveRanking]
+      .map(p => ({ user_id: p.user_id, pts: p.total_points - (matchPtsMap[p.user_id] ?? 0) }))
+      .sort((a, b) => b.pts - a.pts)
+    const livePrevPosMap = Object.fromEntries(livePrevRanking.map((p, i) => [p.user_id, i + 1]))
+
+    liveRanking = liveRanking.map(p => ({ ...p, prev_position: livePrevPosMap[p.user_id] }))
   }
 
   const team1 = liveMatch ? (liveMatch.team1 as any) : null
@@ -177,38 +246,39 @@ export default async function LeaderboardPage({ searchParams }: Props) {
 
               {/* Live ranking */}
               <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden">
-                <div className="grid grid-cols-12 gap-2 p-4 border-b border-white/10 text-slate-400 text-sm font-medium">
+                <div className="grid grid-cols-12 gap-2 p-4 border-b border-white/10 text-slate-400 text-xs font-medium">
                   <div className="col-span-1 text-center">#</div>
-                  <div className="col-span-4">Jugador</div>
+                  <div className="col-span-3">Jugador</div>
                   <div className="col-span-2 text-center">Pts</div>
-                  <div className="col-span-3 text-center">Pronóstico</div>
+                  <div className="col-span-2 text-center">Pronóstico</div>
                   <div className="col-span-2 text-center">+Pts</div>
+                  <div className="col-span-2 text-center">↕</div>
                 </div>
 
                 {liveRanking.length > 0 ? (
                   liveRanking.map((player, index) => (
                     <div
                       key={player.user_id}
-                      className={`grid grid-cols-12 gap-2 p-4 items-center hover:bg-white/5 transition-colors
+                      className={`grid grid-cols-12 gap-2 p-3 items-center hover:bg-white/5 transition-colors
                         ${index === 0 ? 'bg-gradient-to-r from-yellow-500/10 to-transparent' : ''}
                         ${index === 1 ? 'bg-gradient-to-r from-slate-400/10 to-transparent' : ''}
                         ${index === 2 ? 'bg-gradient-to-r from-orange-500/10 to-transparent' : ''}
                         ${index !== liveRanking.length - 1 ? 'border-b border-white/5' : ''}`}
                     >
                       <div className="col-span-1 text-center">
-                        {index === 0 && <span className="text-2xl">🥇</span>}
-                        {index === 1 && <span className="text-2xl">🥈</span>}
-                        {index === 2 && <span className="text-2xl">🥉</span>}
-                        {index > 2 && <span className="text-slate-500 font-medium">{index + 1}</span>}
+                        {index === 0 && <span className="text-xl">🥇</span>}
+                        {index === 1 && <span className="text-xl">🥈</span>}
+                        {index === 2 && <span className="text-xl">🥉</span>}
+                        {index > 2 && <span className="text-slate-500 font-medium text-sm">{index + 1}</span>}
                       </div>
-                      <div className="col-span-4 flex items-center gap-2 min-w-0">
-                        <Avatar url={player.avatar_url} name={player.display_name || player.username} size={32} />
-                        <span className="text-white font-medium truncate text-sm">
+                      <div className="col-span-3 flex items-center gap-2 min-w-0">
+                        <Avatar url={player.avatar_url} name={player.display_name || player.username} size={28} />
+                        <span className="text-white font-medium truncate text-xs">
                           {player.display_name || player.username || 'Anónimo'}
                         </span>
                       </div>
-                      <div className="col-span-2 text-center text-white font-bold text-lg">{player.total_points}</div>
-                      <div className="col-span-3 text-center font-mono text-sm text-slate-300">
+                      <div className="col-span-2 text-center text-white font-bold">{player.total_points}</div>
+                      <div className="col-span-2 text-center font-mono text-xs text-slate-300">
                         {player.pred_team1} – {player.pred_team2}
                       </div>
                       <div className="col-span-2 text-center">
@@ -220,6 +290,9 @@ export default async function LeaderboardPage({ searchParams }: Props) {
                           <span className="text-slate-600 text-sm">—</span>
                         )}
                       </div>
+                      <div className="col-span-2 flex justify-center">
+                        <PositionChange current={index + 1} previous={player.prev_position} />
+                      </div>
                     </div>
                   ))
                 ) : (
@@ -230,7 +303,7 @@ export default async function LeaderboardPage({ searchParams }: Props) {
               </div>
 
               <p className="mt-6 text-center text-slate-500 text-sm">
-                Pts Actuales incluye puntos del partido en juego
+                Pts incluye el partido en juego · ↕ vs antes del partido
               </p>
             </>
           ) : (
@@ -244,12 +317,12 @@ export default async function LeaderboardPage({ searchParams }: Props) {
           <>
             {/* General leaderboard */}
             <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden">
-              <div className="grid grid-cols-12 gap-2 p-4 border-b border-white/10 text-slate-400 text-sm font-medium">
+              <div className="grid grid-cols-12 gap-2 p-4 border-b border-white/10 text-slate-400 text-xs font-medium">
                 <div className="col-span-1 text-center">#</div>
                 <div className="col-span-5">Jugador</div>
                 <div className="col-span-2 text-center">Pts</div>
                 <div className="col-span-2 text-center">Plenos</div>
-                <div className="col-span-2 text-center">Partidos</div>
+                <div className="col-span-2 text-center">↕</div>
               </div>
 
               {leaderboard.length > 0 ? (
@@ -278,7 +351,9 @@ export default async function LeaderboardPage({ searchParams }: Props) {
                     </div>
                     <div className="col-span-2 text-center text-white font-bold text-lg">{player.total_points}</div>
                     <div className="col-span-2 text-center text-slate-400">{player.plenos}</div>
-                    <div className="col-span-2 text-center text-slate-400">{player.matches_played ?? 0}</div>
+                    <div className="col-span-2 flex justify-center">
+                      <PositionChange current={index + 1} previous={prevPositionMap[player.id]} />
+                    </div>
                   </div>
                 ))
               ) : (
@@ -301,7 +376,7 @@ export default async function LeaderboardPage({ searchParams }: Props) {
             </div>
 
             <p className="mt-6 text-center text-slate-500 text-sm">
-              Pts = Puntos totales | Plenos = Resultados exactos
+              Pts = Puntos totales · Plenos = Resultados exactos · ↕ vs último partido
             </p>
           </>
         )}
