@@ -63,10 +63,11 @@ Three clients in `src/lib/supabase/`:
 | `/` | Server | Hero landing with 3 match cards (last played, live, next) |
 | `/login` | Server | Google OAuth |
 | `/play` | Client (`'use client'`) | Enter/edit predictions, auto-saves with debounce, inputs lock 5min before match |
-| `/leaderboard` | Server | Global ranking + weekly tabs (Semana 1–4) |
+| `/leaderboard` | Server | Global ranking + "Partido en Juego" tab (live match predictions) |
 | `/leagues` | Server | Create/join/list user's private leagues |
 | `/leagues/[id]` | Server | League-specific leaderboard |
 | `/profile/[id]` | Server | Public profile — avatar, stats, match-by-match history |
+| `/play/[id]` | Client (`'use client'`) | Match detail — edit own prediction (if not started), see all predictions + scores after match starts |
 | `/profile` | Server | Own profile redirect |
 | `/rules` | Server | Points system explanation + cuota info |
 | `/premios` | Server | Prizes page — sponsor notice + pozo info |
@@ -79,6 +80,15 @@ Three clients in `src/lib/supabase/`:
 - If no live match: [2nd-last finished, last finished, next scheduled]
 
 Each card shows: label + date (top), flag + team name + prediction box (if user predicted), result row with score + pts badge (if live/finished), status badge (bottom). Fetches user scores and predictions server-side.
+
+### Admin API (`/api/admin/match`)
+
+Protected by `Authorization: Bearer <ADMIN_SECRET>` via `src/lib/auth-admin.ts` (`verifyAdminToken` uses `timingSafeEqual` to prevent timing attacks).
+
+- `POST` — set a match `live` or `finished` (with scores). Triggers the scoring DB function.
+- `GET ?id=X` — inspect current match state.
+
+Use this to manually override a match when the automatic cron fails or for testing.
 
 ### Admin panel (`/admin`)
 
@@ -100,8 +110,8 @@ Key tables: `profiles`, `teams`, `matches`, `predictions`, `scores`, `leagues`, 
 Migrations in [supabase/migrations/](supabase/migrations/). RLS enabled on all tables.
 
 **Views:**
-- `v_leaderboard_general` — all-time global ranking
-- `v_leaderboard_weekly` — filtered by `matches.week_number`
+- `v_leaderboard_general` — all-time global ranking (includes live match points — trigger fires in real time)
+- `v_leaderboard_weekly` — filtered by `matches.week_number` (exists in DB but unused in frontend)
 - `v_leaderboard_league` — filtered by `league_id`
 
 `is_pleno = true` on a `scores` row means exact score prediction.
@@ -140,7 +150,7 @@ The route (`src/app/api/cron/update-scores/route.ts`):
 4. Updates `matches.status`, `team1_score`, `team2_score` via admin client
 5. Scoring trigger fires automatically
 
-`teams.code` must match football-data.org TLA codes exactly. Known fixes applied: Atlético Madrid = `ATL` (not `ATM`), Bayern = `FCB` (not `BAY`).
+`teams.code` must match football-data.org TLA codes exactly. When they don't, add an override to `FD_TLA_OVERRIDES` in `src/lib/football-api.ts` (e.g. `BAY → FCB` for Bayern) — never rename the DB code to match the API. The flag emoji map also lives in `src/app/play/[id]/page.tsx` and must be updated when adding new teams.
 
 API token: in `FOOTBALL_DATA_API_KEY` env var (also in memory `project_infra.md`).
 
@@ -159,6 +169,19 @@ Inputs lock 5 minutes before `match_date`. Enforced client-side in `/play`. The 
 ### Styling
 
 Dark theme with gradient backgrounds (`from-slate-950 via-slate-900 to-slate-950`) and glassmorphism (`bg-white/5 border border-white/10 backdrop-blur`). Global tokens in `src/app/globals.css`.
+
+### Leaderboard — tab "Partido en Juego"
+
+`/leaderboard?tab=live` — visible always; shows live match data only when `matches.status = 'live'`.
+
+- **Score card** at top: teams + flags + live score with pulsing red "EN VIVO" badge.
+- **Ranking table**: # | Jugador | Pts Actuales | Pronóstico | +Pts
+  - **Pts Actuales** — `total_points` from `v_leaderboard_general`, which already includes live-match points (trigger recalculates on every score change).
+  - **Pronóstico** — the user's prediction for the live match (`predictions.team1_score – team2_score`).
+  - **+Pts** — points earned from this match specifically (`scores.points` for that `match_id`), shown in emerald; `—` if not yet calculated.
+- Only players who predicted the live match appear in this tab.
+- Data uses two parallel admin-client queries (predictions + scores by `match_id`) — no FK between those tables, so they cannot be nested in one Supabase select.
+- The tab shows a pulsing red dot when a live match exists.
 
 ## Removed Features
 
