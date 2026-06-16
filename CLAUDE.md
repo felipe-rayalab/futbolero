@@ -62,7 +62,7 @@ Three clients in `src/lib/supabase/`:
 |-------|------|---------|
 | `/` | Server | Hero landing with 3 match cards (last played, live, next) |
 | `/login` | Server | Google OAuth |
-| `/play` | Client (`'use client'`) | Enter/edit predictions, auto-saves with debounce, inputs lock 5min before match |
+| `/play` | Client (`'use client'`) | Enter/edit predictions, auto-saves with debounce, inputs lock 5min before match. Upcoming matches shown first; past matches collapsible under "Jugados" button. |
 | `/leaderboard` | Server | Global ranking + "Partido en Juego" tab (live match predictions + position changes) |
 | `/leagues` | Server | Create/join/list user's private leagues |
 | `/leagues/[id]` | Server | League-specific leaderboard |
@@ -153,6 +153,18 @@ The route (`src/app/api/cron/update-scores/route.ts`):
 `teams.code` must match football-data.org TLA codes exactly. When they don't, add an override to `FD_TLA_OVERRIDES` in `src/lib/football-api.ts` (e.g. `BAY → FCB` for Bayern) — never rename the DB code to match the API. The flag emoji map also lives in `src/app/play/[id]/page.tsx` and must be updated when adding new teams.
 
 API token: in `FOOTBALL_DATA_API_KEY` env var (also in memory `project_infra.md`).
+
+### Play page (`/play`) — layout
+
+Matches are split within each phase tab:
+- **Upcoming/live** — shown at the top, fully editable or locked as appropriate.
+- **Jugados (X)** — full-width collapsible button reveals past matches below. Auto-expands when the phase has no upcoming matches.
+
+On load, `activePhase` is set to the first phase that still has non-finished matches (not always "Grupos").
+
+Past match cards show:
+- Disabled score inputs with the user's prediction
+- A `Resultado | X — Y | N pts ⭐` row (same pattern as the home page), sourced from the `scores` table loaded in parallel with predictions and matches.
 
 ### Prediction Locking
 

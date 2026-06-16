@@ -22,6 +22,7 @@ type Prediction = {
   team2_score: number
 }
 
+type Score = { match_id: number; points: number; is_pleno: boolean }
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error'
 
 
@@ -41,9 +42,11 @@ export default function PlayPage() {
   const [matches, setMatches] = useState<Match[]>([])
   const [predictions, setPredictions] = useState<Record<number, Prediction>>({})
   const [localPredictions, setLocalPredictions] = useState<Record<number, { team1: string; team2: string }>>({})
+  const [scores, setScores] = useState<Record<number, Score>>({})
   const [saveStatus, setSaveStatus] = useState<Record<number, SaveStatus>>({})
   const [loading, setLoading] = useState(true)
   const [activePhase, setActivePhase] = useState<string>('')
+  const [showPast, setShowPast] = useState(false)
   const [userId, setUserId] = useState<string | null>(null)
   const supabase = createClient()
   const debounceTimers = useRef<Record<number, NodeJS.Timeout>>({})
@@ -63,7 +66,7 @@ export default function PlayPage() {
   async function loadData() {
     const { data: { user } } = await supabase.auth.getUser()
     if (user) setUserId(user.id)
-    await Promise.all([loadMatches(), loadPredictions()])
+    await Promise.all([loadMatches(), loadPredictions(), loadScores()])
     setLoading(false)
   }
 
@@ -81,7 +84,9 @@ export default function PlayPage() {
     if (data) {
       setMatches(data as unknown as Match[])
       if (data.length > 0 && !activePhase) {
-        setActivePhase(data[0].phase)
+        // Jump to the first phase that still has non-finished matches
+        const firstPending = (data as unknown as Match[]).find(m => m.status !== 'finished')
+        setActivePhase(firstPending?.phase ?? data[0].phase)
       }
     }
   }
@@ -107,6 +112,20 @@ export default function PlayPage() {
       })
       setPredictions(predMap)
       setLocalPredictions(localMap)
+    }
+  }
+
+  async function loadScores() {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+    const { data } = await supabase
+      .from('scores')
+      .select('match_id, points, is_pleno')
+      .eq('user_id', user.id)
+    if (data) {
+      const map: Record<number, Score> = {}
+      data.forEach(s => { map[s.match_id] = s })
+      setScores(map)
     }
   }
 
@@ -247,7 +266,7 @@ export default function PlayPage() {
           <span className="text-emerald-400/70 text-sm">💾 Guardado automático</span>
         </div>
 
-        {/* Phase tabs — only shown when there are multiple phases */}
+        {/* Phase tabs */}
         {phases.length > 1 && (
           <div className="relative mb-6" role="tablist" aria-label="Fases del torneo">
             <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
@@ -256,7 +275,7 @@ export default function PlayPage() {
                   key={phase}
                   role="tab"
                   aria-selected={activePhase === phase}
-                  onClick={() => setActivePhase(phase)}
+                  onClick={() => { setActivePhase(phase); setShowPast(false) }}
                   className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50 ${
                     activePhase === phase
                       ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20'
@@ -280,114 +299,151 @@ export default function PlayPage() {
             </p>
             <p className="text-slate-500 text-sm">Vuelve aquí cuando empiece para hacer tus predicciones.</p>
           </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {matchesByPhase[activePhase]?.map(match => {
-              const editable = canPredict(match.match_date)
-              const local = localPredictions[match.id] || { team1: '', team2: '' }
-              const hasPrediction = local.team1 !== '' && local.team2 !== ''
-              const status = saveStatus[match.id]
+        ) : (() => {
+          const phaseMatches = matchesByPhase[activePhase] ?? []
+          const upcoming = phaseMatches.filter(m => m.status !== 'finished')
+          const past = phaseMatches.filter(m => m.status === 'finished')
+          // If no upcoming in this phase, show past automatically
+          const effectiveShowPast = showPast || upcoming.length === 0
 
-              return (
-                <div
-                  key={match.id}
-                  className={`relative bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-sm rounded-2xl p-5 transition-all border ${
-                    !editable
-                      ? 'opacity-60 border-white/5'
-                      : hasPrediction
-                      ? 'border-emerald-500/30 hover:border-emerald-500/50'
-                      : 'border-white/10 hover:border-white/20'
-                  }`}
-                >
-                  {/* Link to detail — covers the header area */}
-                  <Link
-                    href={`/play/${match.id}`}
-                    className="absolute top-0 right-0 text-xs text-slate-600 hover:text-slate-400 transition-colors p-3"
-                    aria-label="Ver detalle del partido"
-                  >
-                    →
-                  </Link>
-                  {/* Header */}
-                  <div className="flex justify-between items-center mb-4">
-                    <span className="text-xs text-slate-500">{formatDate(match.match_date)}</span>
-                    {!editable && (
-                      <span className="text-xs text-slate-400 bg-white/5 px-2 py-1 rounded-full">Cerrado</span>
-                    )}
-                    {editable && status === 'saving' && (
-                      <span className="text-xs text-yellow-400 bg-yellow-400/10 px-2 py-1 rounded-full animate-pulse" role="status">Guardando…</span>
-                    )}
-                    {editable && status === 'saved' && (
-                      <span className="text-xs text-emerald-400 bg-emerald-400/10 px-2 py-1 rounded-full" role="status">✓ Guardado</span>
-                    )}
-                    {editable && status === 'error' && (
-                      <span className="text-xs text-red-400 bg-red-400/10 px-2 py-1 rounded-full" role="alert">Error al guardar</span>
-                    )}
-                    {editable && hasPrediction && (!status || status === 'idle') && (
-                      <span className="text-xs text-emerald-400 bg-emerald-400/10 px-2 py-1 rounded-full">✓ Listo</span>
-                    )}
-                    {editable && !hasPrediction && (!status || status === 'idle') && (
-                      <span className="text-xs text-slate-500 bg-white/5 px-2 py-1 rounded-full">Sin predicción</span>
-                    )}
-                  </div>
+          function renderCard(match: Match) {
+            const editable = canPredict(match.match_date)
+            const local = localPredictions[match.id] || { team1: '', team2: '' }
+            const hasPrediction = local.team1 !== '' && local.team2 !== ''
+            const status = saveStatus[match.id]
+            const isLive = match.status === 'live'
+            const isFinished = match.status === 'finished'
+            const matchScore = scores[match.id]
 
-                  {/* Team 1 */}
-                  <div className="flex items-center justify-between gap-3 mb-3">
-                    <div className="flex items-center gap-3 flex-1 min-w-0">
-                      <span className="text-2xl" aria-hidden="true">{getFlag(match.team1?.code)}</span>
-                      <span className="text-white font-medium truncate">
-                        {match.team1?.name || 'TBD'}
+            return (
+              <div
+                key={match.id}
+                className={`relative backdrop-blur-sm rounded-2xl p-5 transition-all border ${
+                  isLive
+                    ? 'bg-gradient-to-br from-emerald-950/60 to-slate-900/80 border-emerald-500/50 shadow-lg shadow-emerald-500/10'
+                    : isFinished
+                    ? 'bg-gradient-to-br from-white/5 to-white/5 border-white/5 opacity-70'
+                    : hasPrediction
+                    ? 'bg-gradient-to-br from-white/10 to-white/5 border-emerald-500/30 hover:border-emerald-500/50'
+                    : 'bg-gradient-to-br from-white/10 to-white/5 border-white/10 hover:border-white/20'
+                }`}
+              >
+                {isLive && <div className="absolute inset-0 rounded-2xl ring-1 ring-emerald-500/30 animate-pulse pointer-events-none" />}
+                <Link href={`/play/${match.id}`} className="absolute top-0 right-0 text-xs text-slate-600 hover:text-slate-400 transition-colors p-3" aria-label="Ver detalle">→</Link>
+
+                <div className="flex justify-between items-center mb-4">
+                  <span className="text-xs text-slate-500">{formatDate(match.match_date)}</span>
+                  <div className="flex items-center gap-2">
+                    {isLive && (
+                      <span className="flex items-center gap-1.5 text-xs text-red-400 bg-red-400/10 px-2 py-1 rounded-full font-medium">
+                        <span className="w-1.5 h-1.5 bg-red-400 rounded-full animate-pulse" />EN VIVO
                       </span>
-                    </div>
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      maxLength={1}
-                      value={local.team1}
-                      onChange={(e) => updateLocalPrediction(match.id, 'team1', e.target.value)}
-                      disabled={!editable}
-                      aria-label={`Goles ${match.team1?.name || 'Equipo 1'}`}
-                      className="w-14 h-14 text-center text-2xl font-bold bg-white/10 border border-white/10 rounded-xl text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 disabled:opacity-50"
-                      placeholder="–"
-                    />
+                    )}
+                    {!editable && !isLive && !isFinished && <span className="text-xs text-slate-400 bg-white/5 px-2 py-1 rounded-full">Cerrado</span>}
+                    {editable && status === 'saving' && <span className="text-xs text-yellow-400 bg-yellow-400/10 px-2 py-1 rounded-full animate-pulse" role="status">Guardando…</span>}
+                    {editable && status === 'saved' && <span className="text-xs text-emerald-400 bg-emerald-400/10 px-2 py-1 rounded-full" role="status">✓ Guardado</span>}
+                    {editable && status === 'error' && <span className="text-xs text-red-400 bg-red-400/10 px-2 py-1 rounded-full" role="alert">Error</span>}
+                    {editable && hasPrediction && (!status || status === 'idle') && <span className="text-xs text-emerald-400 bg-emerald-400/10 px-2 py-1 rounded-full">✓ Listo</span>}
+                    {editable && !hasPrediction && (!status || status === 'idle') && <span className="text-xs text-slate-500 bg-white/5 px-2 py-1 rounded-full">Sin predicción</span>}
                   </div>
+                </div>
 
-                  {/* Team 2 */}
-                  <div className="flex items-center justify-between gap-3 mb-4">
-                    <div className="flex items-center gap-3 flex-1 min-w-0">
-                      <span className="text-2xl" aria-hidden="true">{getFlag(match.team2?.code)}</span>
-                      <span className="text-white font-medium truncate">
-                        {match.team2?.name || 'TBD'}
+                <div className="flex items-center justify-between gap-3 mb-3">
+                  <div className="flex items-center gap-3 flex-1 min-w-0">
+                    <span className="text-2xl" aria-hidden="true">{getFlag(match.team1?.code)}</span>
+                    <span className="text-white font-medium truncate">{match.team1?.name || 'TBD'}</span>
+                  </div>
+                  <input
+                    type="text" inputMode="numeric" maxLength={1}
+                    value={local.team1}
+                    onChange={e => updateLocalPrediction(match.id, 'team1', e.target.value)}
+                    disabled={!editable}
+                    aria-label={`Goles ${match.team1?.name || 'Equipo 1'}`}
+                    className="w-14 h-14 text-center text-2xl font-bold bg-white/10 border border-white/10 rounded-xl text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 disabled:opacity-50"
+                    placeholder="–"
+                  />
+                </div>
+
+                <div className="flex items-center justify-between gap-3 mb-4">
+                  <div className="flex items-center gap-3 flex-1 min-w-0">
+                    <span className="text-2xl" aria-hidden="true">{getFlag(match.team2?.code)}</span>
+                    <span className="text-white font-medium truncate">{match.team2?.name || 'TBD'}</span>
+                  </div>
+                  <input
+                    type="text" inputMode="numeric" maxLength={1}
+                    value={local.team2}
+                    onChange={e => updateLocalPrediction(match.id, 'team2', e.target.value)}
+                    disabled={!editable}
+                    aria-label={`Goles ${match.team2?.name || 'Equipo 2'}`}
+                    className="w-14 h-14 text-center text-2xl font-bold bg-white/10 border border-white/10 rounded-xl text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 disabled:opacity-50"
+                    placeholder="–"
+                  />
+                </div>
+
+                {(isLive || isFinished) && match.team1_score !== null && match.team2_score !== null && (
+                  <div className={`flex items-center justify-between rounded-xl px-3 py-2 mb-3 ${
+                    isLive ? 'bg-emerald-500/10 border border-emerald-500/20' : 'bg-white/5 border border-white/10'
+                  }`}>
+                    <span className="text-xs text-slate-400">{isLive ? 'Marcador' : 'Resultado'}</span>
+                    <span className={`text-sm font-bold tracking-widest ${isLive ? 'text-emerald-400' : 'text-white'}`}>
+                      {match.team1_score} — {match.team2_score}
+                    </span>
+                    {matchScore ? (
+                      <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                        matchScore.is_pleno ? 'text-yellow-300 bg-yellow-400/20'
+                        : matchScore.points > 0 ? 'text-emerald-400 bg-emerald-400/10'
+                        : 'text-slate-500 bg-white/5'
+                      }`}>
+                        {matchScore.is_pleno ? '⭐ ' : ''}{matchScore.points} pts
                       </span>
-                    </div>
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      maxLength={1}
-                      value={local.team2}
-                      onChange={(e) => updateLocalPrediction(match.id, 'team2', e.target.value)}
-                      disabled={!editable}
-                      aria-label={`Goles ${match.team2?.name || 'Equipo 2'}`}
-                      className="w-14 h-14 text-center text-2xl font-bold bg-white/10 border border-white/10 rounded-xl text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 disabled:opacity-50"
-                      placeholder="–"
-                    />
+                    ) : (
+                      <span className="text-xs text-slate-600">— pts</span>
+                    )}
                   </div>
+                )}
 
-                  {/* Footer */}
-                  <div className="flex justify-between items-center text-xs pt-3 border-t border-white/5">
-                    <span className="text-slate-500">Máx <span className="text-emerald-400 font-semibold">{getMaxPoints(match.phase)} pts</span></span>
-                  </div>
+                <div className="flex justify-between items-center text-xs pt-3 border-t border-white/5">
+                  <span className="text-slate-500">Máx <span className="text-emerald-400 font-semibold">{getMaxPoints(match.phase)} pts</span></span>
+                  {isFinished && <span className="text-xs text-slate-500">Finalizado</span>}
+                </div>
+              </div>
+            )
+          }
 
-                  {/* Result if finished */}
-                  {match.status === 'finished' && (
-                    <div className="mt-3 text-center text-emerald-400 font-bold bg-emerald-400/10 rounded-lg py-2">
-                      Resultado: {match.team1_score} - {match.team2_score}
+          return (
+            <>
+              {/* Upcoming + live matches */}
+              {upcoming.length > 0 && (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {upcoming.map(renderCard)}
+                </div>
+              )}
+
+              {/* Past matches — collapsible */}
+              {past.length > 0 && (
+                <div className={upcoming.length > 0 ? 'mt-8' : ''}>
+                  {upcoming.length > 0 && (
+                    <button
+                      onClick={() => setShowPast(p => !p)}
+                      className="w-full flex items-center justify-between px-5 py-3.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-slate-300 font-semibold transition-colors mb-4"
+                    >
+                      <span className="flex items-center gap-3">
+                        <span>Jugados</span>
+                        <span className="text-sm text-slate-500 bg-white/5 px-2 py-0.5 rounded-full font-normal">{past.length}</span>
+                      </span>
+                      <span className={`text-slate-500 text-sm transition-transform duration-200 ${effectiveShowPast ? 'rotate-90' : ''}`}>▶</span>
+                    </button>
+                  )}
+                  {effectiveShowPast && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {past.map(renderCard)}
                     </div>
                   )}
                 </div>
-              )
-            })}
-          </div>
-        )}
+              )}
+            </>
+          )
+        })()}
       </main>
 
     </div>
