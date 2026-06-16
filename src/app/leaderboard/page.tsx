@@ -119,6 +119,7 @@ export default async function LeaderboardPage({ searchParams }: Props) {
     pred_team1: number
     pred_team2: number
     match_points: number | null
+    is_pleno: boolean
     prev_position: number | undefined
   }
   let liveRanking: LivePlayer[] = []
@@ -134,12 +135,13 @@ export default async function LeaderboardPage({ searchParams }: Props) {
         .eq('match_id', liveMatch.id),
       admin
         .from('scores')
-        .select('user_id, points')
+        .select('user_id, points, is_pleno')
         .eq('match_id', liveMatch.id),
     ])
 
     const totalPtsMap = Object.fromEntries(leaderboard.map(p => [p.id as string, p.total_points as number]))
     const matchPtsMap = Object.fromEntries((matchScores ?? []).map(s => [s.user_id, s.points as number]))
+    const matchPlenoMap = Object.fromEntries((matchScores ?? []).map(s => [s.user_id, s.is_pleno as boolean]))
 
     liveRanking = ((preds ?? []) as any[])
       .map(p => ({
@@ -151,6 +153,7 @@ export default async function LeaderboardPage({ searchParams }: Props) {
         pred_team1: p.team1_score as number,
         pred_team2: p.team2_score as number,
         match_points: matchPtsMap[p.user_id] ?? null,
+        is_pleno: matchPlenoMap[p.user_id] ?? false,
         prev_position: undefined as number | undefined,
       }))
       .sort((a, b) => b.total_points - a.total_points)
@@ -259,10 +262,11 @@ export default async function LeaderboardPage({ searchParams }: Props) {
                   liveRanking.map((player, index) => (
                     <div
                       key={player.user_id}
-                      className={`grid grid-cols-12 gap-2 p-3 items-center hover:bg-white/5 transition-colors
-                        ${index === 0 ? 'bg-gradient-to-r from-yellow-500/10 to-transparent' : ''}
-                        ${index === 1 ? 'bg-gradient-to-r from-slate-400/10 to-transparent' : ''}
-                        ${index === 2 ? 'bg-gradient-to-r from-orange-500/10 to-transparent' : ''}
+                      className={`grid grid-cols-12 gap-2 p-3 items-center transition-colors
+                        ${player.is_pleno ? 'bg-gradient-to-r from-yellow-400/10 to-transparent border-l-2 border-yellow-400/60 hover:from-yellow-400/15' : 'hover:bg-white/5'}
+                        ${!player.is_pleno && index === 0 ? 'bg-gradient-to-r from-yellow-500/10 to-transparent' : ''}
+                        ${!player.is_pleno && index === 1 ? 'bg-gradient-to-r from-slate-400/10 to-transparent' : ''}
+                        ${!player.is_pleno && index === 2 ? 'bg-gradient-to-r from-orange-500/10 to-transparent' : ''}
                         ${index !== liveRanking.length - 1 ? 'border-b border-white/5' : ''}`}
                     >
                       <div className="col-span-1 text-center">
@@ -273,9 +277,12 @@ export default async function LeaderboardPage({ searchParams }: Props) {
                       </div>
                       <div className="col-span-3 flex items-center gap-2 min-w-0">
                         <Avatar url={player.avatar_url} name={player.display_name || player.username} size={28} />
-                        <span className="text-white font-medium truncate text-xs">
-                          {player.display_name || player.username || 'Anónimo'}
-                        </span>
+                        <div className="flex items-center gap-1 min-w-0">
+                          <span className={`font-medium truncate text-xs ${player.is_pleno ? 'text-yellow-300' : 'text-white'}`}>
+                            {player.display_name || player.username || 'Anónimo'}
+                          </span>
+                          {player.is_pleno && <span className="text-sm shrink-0">⭐</span>}
+                        </div>
                       </div>
                       <div className="col-span-2 text-center text-white font-bold">{player.total_points}</div>
                       <div className="col-span-2 text-center font-mono text-xs text-slate-300">
@@ -283,9 +290,13 @@ export default async function LeaderboardPage({ searchParams }: Props) {
                       </div>
                       <div className="col-span-2 text-center">
                         {player.match_points !== null ? (
-                          <span className={`font-bold text-sm ${player.match_points > 0 ? 'text-emerald-400' : 'text-slate-500'}`}>
-                            +{player.match_points}
-                          </span>
+                          player.is_pleno ? (
+                            <span className="font-bold text-sm text-yellow-300">⭐ +{player.match_points}</span>
+                          ) : (
+                            <span className={`font-bold text-sm ${player.match_points > 0 ? 'text-emerald-400' : 'text-slate-500'}`}>
+                              +{player.match_points}
+                            </span>
+                          )
                         ) : (
                           <span className="text-slate-600 text-sm">—</span>
                         )}

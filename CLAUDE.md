@@ -197,6 +197,7 @@ Dark theme with gradient backgrounds (`from-slate-950 via-slate-900 to-slate-950
 - Data uses two parallel admin-client queries (predictions + scores by `match_id`) — no FK between those tables, so they cannot be nested in one Supabase select.
 - The tab shows a pulsing red dot when a live match exists.
 - **↕ column (live tab)**: compares each predictor's position before vs after live match points. Computed in JS by re-sorting predictors on `total_points - match_points` and diffing against current order.
+- **Pleno highlight**: players with `is_pleno = true` on their live match score get a gold left-border row, yellow name + ⭐, and the +Pts column shows `⭐ +N` in yellow. Requires fetching `is_pleno` from `scores` alongside `points`.
 
 ## Removed Features
 
