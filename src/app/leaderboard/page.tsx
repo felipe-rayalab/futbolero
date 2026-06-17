@@ -50,6 +50,90 @@ function PositionChange({ current, previous }: { current: number; previous: numb
   )
 }
 
+type PlayerRow = {
+  id: string
+  display_name: string | null
+  username: string | null
+  avatar_url: string | null
+  has_paid: boolean
+  notes: string | null
+  rank: number | null
+  total_points: number
+}
+
+function DeudoresTab({ sinPagar, conPago }: { sinPagar: PlayerRow[]; conPago: PlayerRow[] }) {
+  function PlayerList({ players, label, accent }: {
+    players: PlayerRow[]
+    label: string
+    accent: string
+  }) {
+    return (
+      <div className="mb-6">
+        <div className={`flex items-center gap-2 mb-3 px-1`}>
+          <h2 className={`text-sm font-semibold ${accent}`}>{label}</h2>
+          <span className={`text-xs px-2 py-0.5 rounded-full bg-white/10 text-slate-400`}>{players.length}</span>
+        </div>
+        <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden">
+          {players.length === 0 ? (
+            <p className="text-center text-slate-500 text-sm py-8">Ninguno</p>
+          ) : (
+            <>
+              <div className="grid grid-cols-12 gap-2 px-4 py-3 border-b border-white/10 text-slate-500 text-xs font-medium">
+                <div className="col-span-1 text-center">#</div>
+                <div className="col-span-5">Jugador</div>
+                <div className="col-span-3">Tag</div>
+                <div className="col-span-3 text-right">Pts</div>
+              </div>
+              {players.map((player, i) => (
+                <div
+                  key={player.id}
+                  className={`grid grid-cols-12 gap-2 px-4 py-3 items-center ${i !== players.length - 1 ? 'border-b border-white/5' : ''} hover:bg-white/5 transition-colors`}
+                >
+                  <div className="col-span-1 text-center">
+                    {player.rank !== null
+                      ? <span className="text-slate-400 text-sm font-medium">{player.rank}°</span>
+                      : <span className="text-slate-600 text-sm">—</span>}
+                  </div>
+                  <div className="col-span-5 flex items-center gap-2 min-w-0">
+                    <Avatar url={player.avatar_url} name={player.display_name || player.username} size={28} />
+                    <span className="text-white text-sm font-medium truncate">
+                      {player.display_name || player.username || 'Anónimo'}
+                    </span>
+                  </div>
+                  <div className="col-span-3">
+                    {player.notes
+                      ? <span className="text-xs px-2 py-0.5 rounded-full bg-white/10 text-slate-300 truncate block max-w-full">{player.notes}</span>
+                      : <span className="text-slate-700 text-xs">—</span>}
+                  </div>
+                  <div className="col-span-3 text-right">
+                    <span className="text-white font-bold text-sm">{player.total_points}</span>
+                    <span className="text-slate-600 text-xs ml-1">pts</span>
+                  </div>
+                </div>
+              ))}
+            </>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <>
+      <PlayerList
+        players={sinPagar}
+        label="💸 Deben la cuota"
+        accent="text-amber-400"
+      />
+      <PlayerList
+        players={conPago}
+        label="✅ Al día"
+        accent="text-emerald-400"
+      />
+    </>
+  )
+}
+
 type Props = {
   searchParams: Promise<{ tab?: string }>
 }
@@ -57,6 +141,7 @@ type Props = {
 export default async function LeaderboardPage({ searchParams }: Props) {
   const { tab } = await searchParams
   const isLiveTab = tab === 'live'
+  const isDeudoresTab = tab === 'deudores'
 
   const supabase = await createClient()
   const admin = createAdminClient()
@@ -168,6 +253,37 @@ export default async function LeaderboardPage({ searchParams }: Props) {
   const refTeam1 = refMatch ? (refMatch.team1 as any) : null
   const refTeam2 = refMatch ? (refMatch.team2 as any) : null
 
+  // --- Deudores tab ---
+  let sinPagar: PlayerRow[] = []
+  let conPago: PlayerRow[] = []
+
+  if (isDeudoresTab) {
+    const { data: profiles } = await admin
+      .from('profiles')
+      .select('id, display_name, username, avatar_url, has_paid, notes')
+
+    const rankMap = Object.fromEntries(
+      leaderboard.map((p, i) => [p.id as string, { rank: i + 1, total_points: p.total_points as number }])
+    )
+
+    const enriched: PlayerRow[] = (profiles ?? [])
+      .map(p => ({
+        ...p,
+        has_paid: p.has_paid ?? false,
+        rank: rankMap[p.id]?.rank ?? null,
+        total_points: rankMap[p.id]?.total_points ?? 0,
+      }))
+      .sort((a, b) => {
+        if (a.rank === null && b.rank === null) return 0
+        if (a.rank === null) return 1
+        if (b.rank === null) return -1
+        return a.rank - b.rank
+      })
+
+    sinPagar = enriched.filter(p => !p.has_paid)
+    conPago  = enriched.filter(p => p.has_paid)
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 overflow-hidden">
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
@@ -187,11 +303,11 @@ export default async function LeaderboardPage({ searchParams }: Props) {
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-2 mb-6 justify-center">
+        <div className="flex gap-2 mb-6 justify-center flex-wrap">
           <Link
             href="/leaderboard"
             className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
-              !isLiveTab
+              !isLiveTab && !isDeudoresTab
                 ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/20'
                 : 'bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white'
             }`}
@@ -214,9 +330,21 @@ export default async function LeaderboardPage({ searchParams }: Props) {
             )}
             Partido en Juego
           </Link>
+          <Link
+            href="/leaderboard?tab=deudores"
+            className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
+              isDeudoresTab
+                ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/20'
+                : 'bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white'
+            }`}
+          >
+            Deudores
+          </Link>
         </div>
 
-        {isLiveTab ? (
+        {isDeudoresTab ? (
+          <DeudoresTab sinPagar={sinPagar} conPago={conPago} />
+        ) : isLiveTab ? (
           refMatch ? (
             <>
               {/* Score card — live or last finished */}
