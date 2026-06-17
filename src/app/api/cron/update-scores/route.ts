@@ -29,6 +29,7 @@ export async function GET(req: NextRequest) {
     .from('matches')
     .select(`
       id, external_id, status, match_date, phase,
+      team1_score, team2_score,
       team1:teams!matches_team1_id_fkey(code),
       team2:teams!matches_team2_id_fkey(code)
     `)
@@ -78,6 +79,11 @@ export async function GET(req: NextRequest) {
     const scoreAway = away ?? fdMatch.score.halfTime.away
 
     if (scoreHome === null || scoreAway === null) continue
+
+    // Si el admin actualizó manualmente por adelantado, no revertir con un score menor de la API
+    const dbScore1 = (match as any).team1_score ?? 0
+    const dbScore2 = (match as any).team2_score ?? 0
+    if (scoreHome < dbScore1 || scoreAway < dbScore2) continue
 
     const newStatus = finished ? 'finished' : 'live'
 
