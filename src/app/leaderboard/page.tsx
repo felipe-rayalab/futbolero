@@ -61,56 +61,54 @@ export default async function LeaderboardPage({ searchParams }: Props) {
   const supabase = await createClient()
   const admin = createAdminClient()
 
-  // General leaderboard + live match — always needed
-  const [{ data: generalData }, { data: liveMatches }] = await Promise.all([
+  const matchSelect = `
+    id, team1_score, team2_score, match_date,
+    team1:teams!matches_team1_id_fkey(name, code),
+    team2:teams!matches_team2_id_fkey(name, code)
+  `
+
+  // Fetch general leaderboard, live match, and last finished match in parallel
+  const [{ data: generalData }, { data: liveMatches }, { data: lastFinished }] = await Promise.all([
     supabase.from('v_leaderboard_general').select('*').limit(100),
+    admin.from('matches').select(matchSelect).eq('status', 'live'),
     admin
       .from('matches')
-      .select(`
-        id, team1_score, team2_score,
-        team1:teams!matches_team1_id_fkey(name, code),
-        team2:teams!matches_team2_id_fkey(name, code)
-      `)
-      .eq('status', 'live'),
+      .select(matchSelect)
+      .eq('status', 'finished')
+      .order('match_date', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ])
 
   const leaderboard = generalData ?? []
   const liveMatch = liveMatches?.[0] ?? null
   const hasLive = !!liveMatch
+  // When no live match, fall back to last finished for the "Partido en Juego" tab
+  const refMatch = liveMatch ?? lastFinished ?? null
 
   // --- General tab: position change vs last finished match ---
   let prevPositionMap: Record<string, number> = {}
-  {
-    const { data: lastFinished } = await admin
-      .from('matches')
-      .select('id')
-      .eq('status', 'finished')
-      .order('match_date', { ascending: false })
-      .limit(1)
-      .maybeSingle()
+  if (lastFinished) {
+    const { data: lastScores } = await admin
+      .from('scores')
+      .select('user_id, points')
+      .eq('match_id', lastFinished.id)
 
-    if (lastFinished) {
-      const { data: lastScores } = await admin
-        .from('scores')
-        .select('user_id, points')
-        .eq('match_id', lastFinished.id)
-
-      const lastPtsMap = Object.fromEntries(
-        (lastScores ?? []).map(s => [s.user_id, s.points as number])
-      )
-      const prevRanking = leaderboard
-        .map(p => ({
-          id: p.id as string,
-          pts: (p.total_points as number) - (lastPtsMap[p.id] ?? 0),
-          plenos: p.plenos as number,
-        }))
-        .sort((a, b) => b.pts - a.pts || b.plenos - a.plenos)
-      prevRanking.forEach((p, i) => { prevPositionMap[p.id] = i + 1 })
-    }
+    const lastPtsMap = Object.fromEntries(
+      (lastScores ?? []).map(s => [s.user_id, s.points as number])
+    )
+    const prevRanking = leaderboard
+      .map(p => ({
+        id: p.id as string,
+        pts: (p.total_points as number) - (lastPtsMap[p.id] ?? 0),
+        plenos: p.plenos as number,
+      }))
+      .sort((a, b) => b.pts - a.pts || b.plenos - a.plenos)
+    prevRanking.forEach((p, i) => { prevPositionMap[p.id] = i + 1 })
   }
 
-  // --- Live tab: predictions + scores for live match ---
-  type LivePlayer = {
+  // --- Live/last-match tab: predictions + scores for refMatch ---
+  type RefPlayer = {
     user_id: string
     display_name: string | null
     username: string | null
@@ -122,9 +120,9 @@ export default async function LeaderboardPage({ searchParams }: Props) {
     is_pleno: boolean
     prev_position: number | undefined
   }
-  let liveRanking: LivePlayer[] = []
+  let refRanking: RefPlayer[] = []
 
-  if (isLiveTab && liveMatch) {
+  if (isLiveTab && refMatch) {
     const [{ data: preds }, { data: matchScores }] = await Promise.all([
       admin
         .from('predictions')
@@ -132,18 +130,18 @@ export default async function LeaderboardPage({ searchParams }: Props) {
           user_id, team1_score, team2_score,
           profile:profiles!predictions_user_id_fkey(display_name, username, avatar_url)
         `)
-        .eq('match_id', liveMatch.id),
+        .eq('match_id', refMatch.id),
       admin
         .from('scores')
         .select('user_id, points, is_pleno')
-        .eq('match_id', liveMatch.id),
+        .eq('match_id', refMatch.id),
     ])
 
     const totalPtsMap = Object.fromEntries(leaderboard.map(p => [p.id as string, p.total_points as number]))
     const matchPtsMap = Object.fromEntries((matchScores ?? []).map(s => [s.user_id, s.points as number]))
     const matchPlenoMap = Object.fromEntries((matchScores ?? []).map(s => [s.user_id, s.is_pleno as boolean]))
 
-    liveRanking = ((preds ?? []) as any[])
+    refRanking = ((preds ?? []) as any[])
       .map(p => ({
         user_id: p.user_id,
         display_name: p.profile?.display_name ?? null,
@@ -158,17 +156,17 @@ export default async function LeaderboardPage({ searchParams }: Props) {
       }))
       .sort((a, b) => b.total_points - a.total_points)
 
-    // Compute previous positions among predictors (before live match)
-    const livePrevRanking = [...liveRanking]
+    // Compute previous positions among predictors (before this match)
+    const prevRanking = [...refRanking]
       .map(p => ({ user_id: p.user_id, pts: p.total_points - (matchPtsMap[p.user_id] ?? 0) }))
       .sort((a, b) => b.pts - a.pts)
-    const livePrevPosMap = Object.fromEntries(livePrevRanking.map((p, i) => [p.user_id, i + 1]))
+    const prevPosMap = Object.fromEntries(prevRanking.map((p, i) => [p.user_id, i + 1]))
 
-    liveRanking = liveRanking.map(p => ({ ...p, prev_position: livePrevPosMap[p.user_id] }))
+    refRanking = refRanking.map(p => ({ ...p, prev_position: prevPosMap[p.user_id] }))
   }
 
-  const team1 = liveMatch ? (liveMatch.team1 as any) : null
-  const team2 = liveMatch ? (liveMatch.team2 as any) : null
+  const refTeam1 = refMatch ? (refMatch.team1 as any) : null
+  const refTeam2 = refMatch ? (refMatch.team2 as any) : null
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 overflow-hidden">
@@ -219,35 +217,58 @@ export default async function LeaderboardPage({ searchParams }: Props) {
         </div>
 
         {isLiveTab ? (
-          hasLive ? (
+          refMatch ? (
             <>
-              {/* Live score card */}
-              <div className="bg-gradient-to-br from-red-500/10 to-white/5 backdrop-blur-sm border border-red-500/20 rounded-2xl p-5 mb-6">
-                <div className="flex items-center justify-center gap-2 mb-4">
-                  <span className="relative flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500" />
-                  </span>
-                  <span className="text-red-400 text-xs font-semibold tracking-widest uppercase">En Vivo</span>
-                </div>
-                <div className="flex items-center justify-center gap-6">
-                  <div className="text-center flex-1">
-                    <div className="text-4xl mb-1">{flag(team1?.code)}</div>
-                    <div className="text-white font-semibold text-sm">{team1?.name ?? 'TBD'}</div>
+              {/* Score card — live or last finished */}
+              {hasLive ? (
+                <div className="bg-gradient-to-br from-red-500/10 to-white/5 backdrop-blur-sm border border-red-500/20 rounded-2xl p-5 mb-6">
+                  <div className="flex items-center justify-center gap-2 mb-4">
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500" />
+                    </span>
+                    <span className="text-red-400 text-xs font-semibold tracking-widest uppercase">En Vivo</span>
                   </div>
-                  <div className="text-center shrink-0">
-                    <div className="text-5xl font-bold text-white tabular-nums">
-                      {liveMatch.team1_score ?? 0} – {liveMatch.team2_score ?? 0}
+                  <div className="flex items-center justify-center gap-6">
+                    <div className="text-center flex-1">
+                      <div className="text-4xl mb-1">{flag(refTeam1?.code)}</div>
+                      <div className="text-white font-semibold text-sm">{refTeam1?.name ?? 'TBD'}</div>
+                    </div>
+                    <div className="text-center shrink-0">
+                      <div className="text-5xl font-bold text-white tabular-nums">
+                        {refMatch.team1_score ?? 0} – {refMatch.team2_score ?? 0}
+                      </div>
+                    </div>
+                    <div className="text-center flex-1">
+                      <div className="text-4xl mb-1">{flag(refTeam2?.code)}</div>
+                      <div className="text-white font-semibold text-sm">{refTeam2?.name ?? 'TBD'}</div>
                     </div>
                   </div>
-                  <div className="text-center flex-1">
-                    <div className="text-4xl mb-1">{flag(team2?.code)}</div>
-                    <div className="text-white font-semibold text-sm">{team2?.name ?? 'TBD'}</div>
+                </div>
+              ) : (
+                <div className="bg-gradient-to-br from-white/8 to-white/3 backdrop-blur-sm border border-white/15 rounded-2xl p-5 mb-6">
+                  <div className="flex items-center justify-center gap-2 mb-4">
+                    <span className="text-slate-400 text-xs font-semibold tracking-widest uppercase">Último Resultado</span>
+                  </div>
+                  <div className="flex items-center justify-center gap-6">
+                    <div className="text-center flex-1">
+                      <div className="text-4xl mb-1">{flag(refTeam1?.code)}</div>
+                      <div className="text-white font-semibold text-sm">{refTeam1?.name ?? 'TBD'}</div>
+                    </div>
+                    <div className="text-center shrink-0">
+                      <div className="text-5xl font-bold text-white tabular-nums">
+                        {refMatch.team1_score ?? 0} – {refMatch.team2_score ?? 0}
+                      </div>
+                    </div>
+                    <div className="text-center flex-1">
+                      <div className="text-4xl mb-1">{flag(refTeam2?.code)}</div>
+                      <div className="text-white font-semibold text-sm">{refTeam2?.name ?? 'TBD'}</div>
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
 
-              {/* Live ranking */}
+              {/* Ranking table */}
               <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden">
                 <div className="grid grid-cols-12 gap-2 p-4 border-b border-white/10 text-slate-400 text-xs font-medium">
                   <div className="col-span-1 text-center">#</div>
@@ -258,8 +279,8 @@ export default async function LeaderboardPage({ searchParams }: Props) {
                   <div className="col-span-2 text-center">↕</div>
                 </div>
 
-                {liveRanking.length > 0 ? (
-                  liveRanking.map((player, index) => (
+                {refRanking.length > 0 ? (
+                  refRanking.map((player, index) => (
                     <div
                       key={player.user_id}
                       className={`grid grid-cols-12 gap-2 p-3 items-center transition-colors
@@ -267,7 +288,7 @@ export default async function LeaderboardPage({ searchParams }: Props) {
                         ${!player.is_pleno && index === 0 ? 'bg-gradient-to-r from-yellow-500/10 to-transparent' : ''}
                         ${!player.is_pleno && index === 1 ? 'bg-gradient-to-r from-slate-400/10 to-transparent' : ''}
                         ${!player.is_pleno && index === 2 ? 'bg-gradient-to-r from-orange-500/10 to-transparent' : ''}
-                        ${index !== liveRanking.length - 1 ? 'border-b border-white/5' : ''}`}
+                        ${index !== refRanking.length - 1 ? 'border-b border-white/5' : ''}`}
                     >
                       <div className="col-span-1 text-center">
                         {index === 0 && <span className="text-xl">🥇</span>}
@@ -314,14 +335,16 @@ export default async function LeaderboardPage({ searchParams }: Props) {
               </div>
 
               <p className="mt-6 text-center text-slate-500 text-sm">
-                Pts incluye el partido en juego · ↕ vs antes del partido
+                {hasLive
+                  ? 'Pts incluye el partido en juego · ↕ vs antes del partido'
+                  : 'Pts totales actuales · ↕ cambio generado por este partido'}
               </p>
             </>
           ) : (
             <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-sm border border-white/10 rounded-2xl p-12 text-center">
               <div className="text-5xl mb-4">⚽</div>
-              <p className="text-lg text-white font-semibold mb-2">No hay partido en juego</p>
-              <p className="text-sm text-slate-400">Este tab se activa cuando hay un partido en vivo.</p>
+              <p className="text-lg text-white font-semibold mb-2">Aún no hay partidos jugados</p>
+              <p className="text-sm text-slate-400">Este tab mostrará el partido en juego o el último resultado.</p>
             </div>
           )
         ) : (

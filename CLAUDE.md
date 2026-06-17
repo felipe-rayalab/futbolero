@@ -190,20 +190,24 @@ Dark theme with gradient backgrounds (`from-slate-950 via-slate-900 to-slate-950
 
 ### Leaderboard — tab "Partido en Juego"
 
-`/leaderboard?tab=live` — visible always; shows live match data only when `matches.status = 'live'`.
+`/leaderboard?tab=live` — always visible. Shows live match when one exists; falls back to the **last finished match** when no live match is active, until the next one starts.
 
-- **Score card** at top: teams + flags + live score with pulsing red "EN VIVO" badge.
+- **`refMatch = liveMatch ?? lastFinished`** — the tab always has a match to show (once any match has been played).
+- **Score card** at top:
+  - Live: red gradient + pulsing "EN VIVO" badge.
+  - Last finished: slate card with "Último Resultado" label (no pulsing dot on tab button).
 - **Ranking table (general)**: # | Jugador | Pts | Plenos | ↕ — "Partidos" column removed to make room.
 - **↕ column (general tab)**: position change vs ranking before the last finished match. Computed by fetching that match's `scores`, subtracting from each user's `total_points`, re-sorting, and diffing positions. Arrow ↑ green / ↓ red / `—` neutral; previous position shown below the arrow (e.g. `5°`).
-- **Ranking table (live tab)**: # | Jugador | Pts | Pronóstico | +Pts | ↕
-  - **Pts Actuales** — `total_points` from `v_leaderboard_general`, which already includes live-match points (trigger recalculates on every score change).
-  - **Pronóstico** — the user's prediction for the live match (`predictions.team1_score – team2_score`).
+- **Ranking table (live/last tab)**: # | Jugador | Pts | Pronóstico | +Pts | ↕
+  - **Pts** — `total_points` from `v_leaderboard_general`, which already includes live-match points (trigger recalculates on every score change).
+  - **Pronóstico** — the user's prediction for the reference match (`predictions.team1_score – team2_score`).
   - **+Pts** — points earned from this match specifically (`scores.points` for that `match_id`), shown in emerald; `—` if not yet calculated.
-- Only players who predicted the live match appear in this tab.
+- Only players who predicted the reference match appear in this tab.
 - Data uses two parallel admin-client queries (predictions + scores by `match_id`) — no FK between those tables, so they cannot be nested in one Supabase select.
-- The tab shows a pulsing red dot when a live match exists.
-- **↕ column (live tab)**: compares each predictor's position before vs after live match points. Computed in JS by re-sorting predictors on `total_points - match_points` and diffing against current order.
-- **Pleno highlight**: players with `is_pleno = true` on their live match score get a gold left-border row, yellow name + ⭐, and the +Pts column shows `⭐ +N` in yellow. Requires fetching `is_pleno` from `scores` alongside `points`.
+- The tab shows a pulsing red dot only when a live match exists.
+- **↕ column**: compares each predictor's position before vs after this match's points. Computed in JS by re-sorting predictors on `total_points - match_points` and diffing against current order.
+- **Pleno highlight**: players with `is_pleno = true` on their score get a gold left-border row, yellow name + ⭐, and the +Pts column shows `⭐ +N` in yellow. Requires fetching `is_pleno` from `scores` alongside `points`.
+- Empty state (no matches played yet): "Aún no hay partidos jugados."
 
 ## Removed Features
 
