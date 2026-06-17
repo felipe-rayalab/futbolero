@@ -92,12 +92,16 @@ Use this to manually override a match when the automatic cron fails or for testi
 
 ### Admin panel (`/admin`)
 
-Protected by hardcoded `ADMIN_EMAIL` in `src/app/admin/page.tsx`. Two tabs:
+Protected by hardcoded `ADMIN_EMAIL` in `src/app/admin/page.tsx`. Three tabs (defaults to "Partidos"):
 
-- **Jugadores** — lists all registered users with email, avatar, `has_paid` toggle (persisted to DB), and inline-editable `notes` field (free text, e.g. "amigo de Felipe"). Uses Server Actions in `src/app/admin/actions.ts`.
-- **Predicciones** — match-by-match view of all predictions with Pleno / Ganador / Error badges.
+- **Partidos** (`AdminMatchesPanel.tsx`) — manage live match scores. Shows live matches first, then upcoming (next 48h), then recently finished (last 24h). Inputs for team1/team2 score + two buttons per match:
+  - **▶ Iniciar en vivo** / **🔄 Actualizar score** — sets `status = 'live'` with the entered scores; DB trigger recalculates points in real time.
+  - **✓ Finalizar** — sets `status = 'finished'`; trigger sets `is_final = true`.
+  - Uses `updateMatchScore` Server Action in `actions.ts`; revalidates `/admin`, `/`, `/leaderboard`, `/play`.
+- **Jugadores** (`AdminUsersPanel.tsx`) — lists all users with email, avatar, `has_paid` toggle, and inline-editable `notes` field. Uses `togglePaid` / `updateNotes` Server Actions.
+- **Predicciones** — read-only match-by-match view of all predictions with Pleno / Ganador / Error badges.
 
-Client components: `AdminTabs.tsx` (tab switcher), `AdminUsersPanel.tsx` (users list with optimistic UI). Both use Server Actions (`togglePaid`, `updateNotes`) that call `revalidatePath('/admin')` after each mutation.
+Client component: `AdminTabs.tsx` (tab switcher). Server Actions in `src/app/admin/actions.ts` call `revalidatePath('/admin')` after each mutation.
 
 ### Database (Supabase/PostgreSQL)
 
@@ -149,6 +153,8 @@ The route (`src/app/api/cron/update-scores/route.ts`):
 3. Looks up matches in our DB by `"HOMECODE-AWAYCODE"` TLA key
 4. Updates `matches.status`, `team1_score`, `team2_score` via admin client
 5. Scoring trigger fires automatically
+
+**Cron guard — manual override protection**: The cron skips updating a match if the API score is lower than what's already in the DB (either team). This prevents the API from reverting a score that was manually set ahead via the admin panel. Once the API catches up, updates resume normally. Edge case: if a goal is disallowed by VAR after the admin already set it, the admin must manually correct it.
 
 `teams.code` must match football-data.org TLA codes exactly. When they don't, add an override to `FD_TLA_OVERRIDES` in `src/lib/football-api.ts` (e.g. `BAY → FCB` for Bayern) — never rename the DB code to match the API. The flag emoji map also lives in `src/app/play/[id]/page.tsx` and must be updated when adding new teams.
 
