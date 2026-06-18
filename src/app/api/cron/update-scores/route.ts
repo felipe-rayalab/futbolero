@@ -53,11 +53,22 @@ export async function GET(req: NextRequest) {
     const t1 = (match.team1 as any)?.code as string
     const t2 = (match.team2 as any)?.code as string
 
-    // Encontrar el partido equivalente en football-data.org por TLA de equipos
-    const fdMatch = fdMatches.find(fd =>
+    // Encontrar el partido equivalente en football-data.org por TLA de equipos.
+    // Algunos partidos en la DB tienen home/away invertidos respecto a la API,
+    // por eso probamos ambas orientaciones y ajustamos los scores según corresponda.
+    let fdMatch = fdMatches.find(fd =>
       fd.homeTeam.tla === ourCodeToTLA(t1) &&
       fd.awayTeam.tla === ourCodeToTLA(t2)
     )
+    let reversed = false
+
+    if (!fdMatch) {
+      fdMatch = fdMatches.find(fd =>
+        fd.homeTeam.tla === ourCodeToTLA(t2) &&
+        fd.awayTeam.tla === ourCodeToTLA(t1)
+      )
+      if (fdMatch) reversed = true
+    }
 
     if (!fdMatch) continue
 
@@ -80,18 +91,22 @@ export async function GET(req: NextRequest) {
 
     if (scoreHome === null || scoreAway === null) continue
 
+    // Mapear home/away de la API a team1/team2 de la DB según orientación
+    const scoreTeam1 = reversed ? scoreAway : scoreHome
+    const scoreTeam2 = reversed ? scoreHome : scoreAway
+
     // Si el admin actualizó manualmente por adelantado, no revertir con un score menor de la API
     const dbScore1 = (match as any).team1_score ?? 0
     const dbScore2 = (match as any).team2_score ?? 0
-    if (scoreHome < dbScore1 || scoreAway < dbScore2) continue
+    if (scoreTeam1 < dbScore1 || scoreTeam2 < dbScore2) continue
 
     const newStatus = finished ? 'finished' : 'live'
 
     // Actualizar resultado actual del partido
     await supabase.from('matches').update({
       status: newStatus,
-      team1_score: scoreHome,
-      team2_score: scoreAway,
+      team1_score: scoreTeam1,
+      team2_score: scoreTeam2,
     }).eq('id', match.id)
 
     // Recalcular puntos para todos los que predijeron este partido
@@ -102,8 +117,9 @@ export async function GET(req: NextRequest) {
     results.push({
       match_id: match.id,
       teams: `${t1} vs ${t2}`,
+      reversed,
       status: newStatus,
-      score: `${scoreHome}–${scoreAway}`,
+      score: `${scoreTeam1}–${scoreTeam2}`,
       predictions_updated: scoreCount,
     })
   }
