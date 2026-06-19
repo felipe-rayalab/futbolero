@@ -40,6 +40,10 @@ export default async function ProfilePage({ params }: { params: Promise<{ id: st
   const totalPlenos = scores?.filter(s => s.is_pleno).length ?? 0
   const maxPoints = scores?.reduce((max, s) => Math.max(max, s.points), 0) ?? 0
 
+  const sortedScores = [...(scores ?? [])].sort((a: any, b: any) =>
+    new Date(b.match?.match_date ?? 0).getTime() - new Date(a.match?.match_date ?? 0).getTime()
+  )
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
@@ -111,7 +115,7 @@ export default async function ProfilePage({ params }: { params: Promise<{ id: st
           </div>
         ) : (
           <div className="space-y-3">
-            {scores.map((s: any, i) => {
+            {sortedScores.map((s: any, i) => {
               const match = s.match
               const pred = predMap[match?.id]
               const isPleno = s.is_pleno
