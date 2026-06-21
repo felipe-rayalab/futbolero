@@ -47,6 +47,7 @@ export default function PlayPage() {
   const [loading, setLoading] = useState(true)
   const [activePhase, setActivePhase] = useState<string>('')
   const [showPast, setShowPast] = useState(false)
+  const [showHistory, setShowHistory] = useState<Record<number, boolean>>({})
   const [userId, setUserId] = useState<string | null>(null)
   const supabase = createClient()
   const debounceTimers = useRef<Record<number, NodeJS.Timeout>>({})
@@ -232,6 +233,32 @@ export default function PlayPage() {
     return flagEmojis[code] || '🏳️'
   }
 
+  function getTeamPreviousMatches(teamCode: string | undefined, excludeMatchId: number) {
+    if (!teamCode) return []
+    return matches
+      .filter(m =>
+        m.status === 'finished' &&
+        m.id !== excludeMatchId &&
+        (m.team1?.code === teamCode || m.team2?.code === teamCode)
+      )
+      .sort((a, b) => new Date(b.match_date).getTime() - new Date(a.match_date).getTime())
+  }
+
+  function getTeamMatchResult(m: Match, teamCode: string) {
+    if (m.team1_score === null || m.team2_score === null) return null
+    const isTeam1 = m.team1?.code === teamCode
+    const teamGoals = isTeam1 ? m.team1_score : m.team2_score
+    const oppGoals = isTeam1 ? m.team2_score : m.team1_score
+    const opp = isTeam1 ? m.team2 : m.team1
+    return {
+      opponentName: opp?.name ?? '?',
+      opponentCode: opp?.code ?? '',
+      teamGoals,
+      oppGoals,
+      result: teamGoals > oppGoals ? 'G' : teamGoals === oppGoals ? 'E' : 'P' as 'G' | 'E' | 'P',
+    }
+  }
+
   const matchesByPhase = matches.reduce((acc, match) => {
     if (!acc[match.phase]) acc[match.phase] = []
     acc[match.phase].push(match)
@@ -406,6 +433,58 @@ export default function PlayPage() {
                   <span className="text-slate-500">Máx <span className="text-emerald-400 font-semibold">{getMaxPoints(match.phase)} pts</span></span>
                   {isFinished && <span className="text-xs text-slate-500">Finalizado</span>}
                 </div>
+
+                {/* Team history section */}
+                {(() => {
+                  const h1 = getTeamPreviousMatches(match.team1?.code, match.id)
+                  const h2 = getTeamPreviousMatches(match.team2?.code, match.id)
+                  if (h1.length === 0 && h2.length === 0) return null
+                  const isOpen = showHistory[match.id]
+                  return (
+                    <div className="mt-2 border-t border-white/5 pt-2">
+                      <button
+                        onClick={() => setShowHistory(prev => ({ ...prev, [match.id]: !prev[match.id] }))}
+                        className="w-full text-xs text-slate-500 hover:text-slate-300 flex items-center justify-center gap-1.5 py-1 transition-colors"
+                      >
+                        <span>Historial del torneo</span>
+                        <span className={`transition-transform duration-200 inline-block ${isOpen ? 'rotate-180' : ''}`}>▾</span>
+                      </button>
+                      {isOpen && (
+                        <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-0">
+                          {[
+                            { code: match.team1?.code, name: match.team1?.name, history: h1 },
+                            { code: match.team2?.code, name: match.team2?.name, history: h2 },
+                          ].map(team => (
+                            <div key={team.code}>
+                              <p className="text-xs text-slate-400 font-medium mb-1.5 flex items-center gap-1">
+                                <span>{getFlag(team.code)}</span>
+                                <span className="truncate">{team.name}</span>
+                              </p>
+                              {team.history.length === 0 ? (
+                                <p className="text-xs text-slate-600 italic">Sin partidos previos</p>
+                              ) : team.history.map((hm, i) => {
+                                const r = getTeamMatchResult(hm, team.code ?? '')
+                                if (!r) return null
+                                return (
+                                  <div key={i} className="flex items-center gap-1 text-xs mb-1">
+                                    <span className={`w-4 h-4 rounded-full flex-shrink-0 flex items-center justify-center text-[10px] font-bold ${
+                                      r.result === 'G' ? 'bg-emerald-500/20 text-emerald-400' :
+                                      r.result === 'E' ? 'bg-yellow-500/20 text-yellow-400' :
+                                                         'bg-red-500/20 text-red-400'
+                                    }`}>{r.result}</span>
+                                    <span className="text-slate-500 flex-shrink-0">vs</span>
+                                    <span className="text-slate-300 truncate">{r.opponentName}</span>
+                                    <span className="ml-auto text-slate-400 font-mono flex-shrink-0">{r.teamGoals}–{r.oppGoals}</span>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })()}
               </div>
             )
           }
