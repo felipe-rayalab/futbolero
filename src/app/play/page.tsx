@@ -450,15 +450,15 @@ export default function PlayPage() {
                         <span className={`transition-transform duration-200 inline-block ${isOpen ? 'rotate-180' : ''}`}>▾</span>
                       </button>
                       {isOpen && (
-                        <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-0">
+                        <div className="mt-2 space-y-3">
                           {[
-                            { code: match.team1?.code, name: match.team1?.name, history: h1 },
-                            { code: match.team2?.code, name: match.team2?.name, history: h2 },
+                            { code: match.team1?.code, history: h1 },
+                            { code: match.team2?.code, history: h2 },
                           ].map(team => (
                             <div key={team.code}>
-                              <p className="text-xs text-slate-400 font-medium mb-1.5 flex items-center gap-1">
+                              <p className="text-[11px] text-slate-500 font-medium mb-1 flex items-center gap-1">
                                 <span>{getFlag(team.code)}</span>
-                                <span className="truncate">{team.name}</span>
+                                <span>{team.code}</span>
                               </p>
                               {team.history.length === 0 ? (
                                 <p className="text-xs text-slate-600 italic">Sin partidos previos</p>
@@ -466,15 +466,17 @@ export default function PlayPage() {
                                 const r = getTeamMatchResult(hm, team.code ?? '')
                                 if (!r) return null
                                 return (
-                                  <div key={i} className="flex items-center gap-1 text-xs mb-1">
-                                    <span className={`w-4 h-4 rounded-full flex-shrink-0 flex items-center justify-center text-[10px] font-bold ${
+                                  <div key={i} className="flex items-center gap-1.5 text-xs mb-0.5">
+                                    <span className={`w-4 h-4 rounded-full flex-shrink-0 flex items-center justify-center text-[9px] font-bold ${
                                       r.result === 'G' ? 'bg-emerald-500/20 text-emerald-400' :
                                       r.result === 'E' ? 'bg-yellow-500/20 text-yellow-400' :
                                                          'bg-red-500/20 text-red-400'
                                     }`}>{r.result}</span>
-                                    <span className="text-slate-500 flex-shrink-0">vs</span>
-                                    <span className="text-slate-300 truncate">{r.opponentName}</span>
-                                    <span className="ml-auto text-slate-400 font-mono flex-shrink-0">{r.teamGoals}–{r.oppGoals}</span>
+                                    <span className="text-lg leading-none">{getFlag(team.code)}</span>
+                                    <span className="font-mono text-slate-200 font-semibold">{r.teamGoals}</span>
+                                    <span className="text-slate-500">–</span>
+                                    <span className="font-mono text-slate-200 font-semibold">{r.oppGoals}</span>
+                                    <span className="text-lg leading-none">{getFlag(r.opponentCode)}</span>
                                   </div>
                                 )
                               })}
