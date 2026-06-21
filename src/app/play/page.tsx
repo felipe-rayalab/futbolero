@@ -466,17 +466,14 @@ export default function PlayPage() {
                                 const r = getTeamMatchResult(hm, team.code ?? '')
                                 if (!r) return null
                                 return (
-                                  <div key={i} className="flex items-center gap-1.5 text-xs mb-0.5">
-                                    <span className={`w-4 h-4 rounded-full flex-shrink-0 flex items-center justify-center text-[9px] font-bold ${
-                                      r.result === 'G' ? 'bg-emerald-500/20 text-emerald-400' :
-                                      r.result === 'E' ? 'bg-yellow-500/20 text-yellow-400' :
-                                                         'bg-red-500/20 text-red-400'
-                                    }`}>{r.result}</span>
-                                    <span className="text-lg leading-none">{getFlag(team.code)}</span>
+                                  <div key={i} className="flex items-center gap-1 text-xs mb-0.5">
+                                    <span className="text-base leading-none">{getFlag(team.code)}</span>
+                                    <span className="text-slate-400 font-medium w-7">{team.code}</span>
                                     <span className="font-mono text-slate-200 font-semibold">{r.teamGoals}</span>
                                     <span className="text-slate-500">–</span>
                                     <span className="font-mono text-slate-200 font-semibold">{r.oppGoals}</span>
-                                    <span className="text-lg leading-none">{getFlag(r.opponentCode)}</span>
+                                    <span className="text-slate-400 font-medium w-7 text-right">{r.opponentCode}</span>
+                                    <span className="text-base leading-none">{getFlag(r.opponentCode)}</span>
                                   </div>
                                 )
                               })}
