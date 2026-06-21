@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useTransition } from 'react'
-import { updateMatchScore } from './actions'
+import { updateMatchScore, recalculateMatchScores } from './actions'
 
 type Team = { name: string; code: string }
 type Match = {
@@ -177,9 +177,28 @@ export default function AdminMatchesPanel({ matches }: { matches: Match[] }) {
             )}
 
             {isFinished && (
-              <p className="text-center text-slate-500 text-sm">
-                ✓ Resultado final — {match.team1_score} – {match.team2_score}
-              </p>
+              <div className="flex items-center justify-between">
+                <p className="text-slate-500 text-sm">
+                  ✓ Resultado final — {match.team1_score} – {match.team2_score}
+                </p>
+                <button
+                  onClick={() => {
+                    startTransition(async () => {
+                      await recalculateMatchScores(match.id)
+                      setLastUpdated(prev => ({
+                        ...prev,
+                        [match.id]: new Date().toLocaleTimeString('es-CL', {
+                          hour: '2-digit', minute: '2-digit', second: '2-digit',
+                        }),
+                      }))
+                    })
+                  }}
+                  disabled={isPending}
+                  className="text-xs px-3 py-1.5 rounded-lg bg-orange-500/15 text-orange-400 border border-orange-500/20 hover:bg-orange-500/25 transition-colors disabled:opacity-50"
+                >
+                  🔁 Recalcular pts
+                </button>
+              </div>
             )}
           </div>
         )

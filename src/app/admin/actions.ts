@@ -46,3 +46,14 @@ export async function updateMatchScore({
   revalidatePath('/leaderboard')
   revalidatePath('/play')
 }
+
+export async function recalculateMatchScores(match_id: number) {
+  await assertAdmin()
+  const admin = createAdminClient()
+  const { error } = await admin.rpc('calculate_and_save_scores', { p_match_id: match_id })
+  if (error) throw new Error(error.message)
+  revalidatePath('/admin')
+  revalidatePath('/')
+  revalidatePath('/leaderboard')
+  revalidatePath('/play')
+}
