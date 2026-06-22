@@ -81,6 +81,8 @@ Three clients in `src/lib/supabase/`:
 
 Each card shows: label + date (top), flag + team name + prediction box (if user predicted), result row with score + pts badge (if live/finished), status badge (bottom). Fetches user scores and predictions server-side.
 
+**⚠️ Known limitation — simultaneous matches**: When two matches are live, only `liveMatches[0]` is shown. Fix is pending — see git tag `backup-before-dual-match`.
+
 ### Admin API (`/api/admin/match`)
 
 Protected by `Authorization: Bearer <ADMIN_SECRET>` via `src/lib/auth-admin.ts` (`verifyAdminToken` uses `timingSafeEqual` to prevent timing attacks).
@@ -94,10 +96,11 @@ Use this to manually override a match when the automatic cron fails or for testi
 
 Protected by hardcoded `ADMIN_EMAIL` in `src/app/admin/page.tsx`. Three tabs (defaults to "Partidos"):
 
-- **Partidos** (`AdminMatchesPanel.tsx`) — manage live match scores. Shows live matches first, then upcoming (next 48h), then recently finished (last 24h). Inputs for team1/team2 score + two buttons per match:
+- **Partidos** (`AdminMatchesPanel.tsx`) — manage live match scores. Shows live matches first, then upcoming (next 48h), then recently finished (last 24h). Inputs for team1/team2 score + buttons per match:
   - **▶ Iniciar en vivo** / **🔄 Actualizar score** — sets `status = 'live'` with the entered scores; DB trigger recalculates points in real time.
   - **✓ Finalizar** — sets `status = 'finished'`; trigger sets `is_final = true`.
-  - Uses `updateMatchScore` Server Action in `actions.ts`; revalidates `/admin`, `/`, `/leaderboard`, `/play`.
+  - **🔁 Recalcular pts** — appears on finished matches only. Calls `recalculateMatchScores` server action → `calculate_and_save_scores` RPC directly, which bypasses the `is_final` trigger guard. Use when a score is corrected after finalization (e.g. VAR disallowed goal).
+  - Uses `updateMatchScore` / `recalculateMatchScores` Server Actions in `actions.ts`; revalidates `/admin`, `/`, `/leaderboard`, `/play`.
 - **Jugadores** (`AdminUsersPanel.tsx`) — lists all users with email, avatar, `has_paid` toggle, and inline-editable `notes` field. Uses `togglePaid` / `updateNotes` Server Actions.
 - **Predicciones** — read-only match-by-match view of all predictions with Pleno / Ganador / Error badges.
 
@@ -130,6 +133,8 @@ Points calculated automatically via DB trigger `on_match_score_change` on `match
 
 **Never manually write to `scores`** — always update `matches` and let the trigger cascade.
 
+**`is_final` guard**: The trigger has `WHERE scores.is_final = false` on its upsert, so once a match is finalized, changing `team1_score`/`team2_score` on the match row does **not** recalculate points. To force recalculation after finalization (e.g. correcting a VAR reversal), use the **🔁 Recalcular pts** button in the admin Partidos tab — it calls `calculate_and_save_scores` RPC which has no such guard.
+
 Scoring rules (from [RULES.md](RULES.md)):
 1. **Winner/draw**: 2 pts (groups) → 7 pts (semis/final)
 2. **Goals per team**: 0–1=1pt, 2=2pt, 3=3pt, 4=4pt, 5+=5pt (90-minute result only)
@@ -154,7 +159,9 @@ The route (`src/app/api/cron/update-scores/route.ts`):
 4. Updates `matches.status`, `team1_score`, `team2_score` via admin client
 5. Scoring trigger fires automatically
 
-**Cron guard — manual override protection**: The cron skips updating a match if the API score is lower than what's already in the DB (either team). This prevents the API from reverting a score that was manually set ahead via the admin panel. Once the API catches up, updates resume normally. Edge case: if a goal is disallowed by VAR after the admin already set it, the admin must manually correct it.
+**Cron guard — manual override protection**: The cron skips updating a match if the API score is lower than what's already in the DB (either team). This prevents the API from reverting a score that was manually set ahead via the admin panel. Once the API catches up, updates resume normally. Edge case: if a goal is disallowed by VAR after the admin already set it, use the admin panel to correct the score and then click **🔁 Recalcular pts** to fix points.
+
+**Home/away reversal**: The cron handles matches where our DB has team1/team2 in the opposite home/away order from football-data.org. It first tries `home=team1, away=team2`; if not found, tries the reverse. When reversed, `scoreTeam1 = API away score` and `scoreTeam2 = API home score`. The cron guard comparison also uses the mapped `scoreTeam1`/`scoreTeam2` (not raw home/away) to avoid false positives.
 
 `teams.code` must match football-data.org TLA codes exactly. When they don't, add an override to `FD_TLA_OVERRIDES` in `src/lib/football-api.ts` (e.g. `BAY → FCB` for Bayern) — never rename the DB code to match the API. The flag emoji map also lives in `src/app/play/[id]/page.tsx` and must be updated when adding new teams.
 
@@ -172,6 +179,12 @@ Past match cards show:
 - Disabled score inputs with the user's prediction
 - A `Resultado | X — Y | N pts ⭐` row (same pattern as the home page), sourced from the `scores` table loaded in parallel with predictions and matches.
 
+**Team history dropdown**: Each match card has a "Historial del torneo ▾" toggle at the bottom (only shown when at least one team has played a previous finished match). Expands to show each team's prior World Cup results — one row per match: `🏳️ COD  N – N  COD 🏳️`. Data is derived from already-loaded `matches` state — no extra API calls. `getTeamPreviousMatches` filters finished matches by team code excluding the current match; `getTeamMatchResult` maps scores to the subject team's perspective.
+
+### Profile page (`/profile/[id]`)
+
+Match-by-match history sorted **reverse chronologically** (newest first) — client-side sort on `match.match_date` after fetching from `scores` joined to `matches`.
+
 ### Prediction Locking
 
 Inputs lock 5 minutes before `match_date`. Enforced client-side in `/play`. The play page re-renders every 30s to enforce deadline as time passes. Locked matches show the predicted score in a read-only box (or 🔒 if no prediction).
@@ -188,26 +201,37 @@ Inputs lock 5 minutes before `match_date`. Enforced client-side in `/play`. The 
 
 Dark theme with gradient backgrounds (`from-slate-950 via-slate-900 to-slate-950`) and glassmorphism (`bg-white/5 border border-white/10 backdrop-blur`). Global tokens in `src/app/globals.css`.
 
-### Leaderboard — tab "Partido en Juego"
+### Leaderboard — tabs
 
-`/leaderboard?tab=live` — always visible. Shows live match when one exists; falls back to the **last finished match** when no live match is active, until the next one starts.
+Three tabs: **General** (blue) | **Partido en Juego** (red, pulsing dot when live) | **Deudores** (amber).
+
+#### Tab: Partido en Juego (`?tab=live`)
+
+Always visible. Shows live match when one exists; falls back to the **last finished match** when no live match is active, until the next one starts.
 
 - **`refMatch = liveMatch ?? lastFinished`** — the tab always has a match to show (once any match has been played).
 - **Score card** at top:
   - Live: red gradient + pulsing "EN VIVO" badge.
   - Last finished: slate card with "Último Resultado" label (no pulsing dot on tab button).
-- **Ranking table (general)**: # | Jugador | Pts | Plenos | ↕ — "Partidos" column removed to make room.
-- **↕ column (general tab)**: position change vs ranking before the last finished match. Computed by fetching that match's `scores`, subtracting from each user's `total_points`, re-sorting, and diffing positions. Arrow ↑ green / ↓ red / `—` neutral; previous position shown below the arrow (e.g. `5°`).
-- **Ranking table (live/last tab)**: # | Jugador | Pts | Pronóstico | +Pts | ↕
-  - **Pts** — `total_points` from `v_leaderboard_general`, which already includes live-match points (trigger recalculates on every score change).
-  - **Pronóstico** — the user's prediction for the reference match (`predictions.team1_score – team2_score`).
-  - **+Pts** — points earned from this match specifically (`scores.points` for that `match_id`), shown in emerald; `—` if not yet calculated.
-- Only players who predicted the reference match appear in this tab.
-- Data uses two parallel admin-client queries (predictions + scores by `match_id`) — no FK between those tables, so they cannot be nested in one Supabase select.
-- The tab shows a pulsing red dot only when a live match exists.
-- **↕ column**: compares each predictor's position before vs after this match's points. Computed in JS by re-sorting predictors on `total_points - match_points` and diffing against current order.
-- **Pleno highlight**: players with `is_pleno = true` on their score get a gold left-border row, yellow name + ⭐, and the +Pts column shows `⭐ +N` in yellow. Requires fetching `is_pleno` from `scores` alongside `points`.
-- Empty state (no matches played yet): "Aún no hay partidos jugados."
+- **Ranking table**: # | Jugador | Pts | Pronóstico | +Pts | ↕
+  - **Pts** — `total_points` from `v_leaderboard_general`, includes live-match points (trigger fires in real time).
+  - **Pronóstico** — user's prediction for `refMatch`.
+  - **+Pts** — `scores.points` for that `match_id`; `—` if not yet calculated.
+- Only players who predicted `refMatch` appear.
+- Data: two parallel admin-client queries (predictions + scores by `match_id`) — no FK so they can't be nested.
+- **↕ column**: position change before vs after this match. Re-sorts predictors on `total_points - match_points`, diffs against current order.
+- **Pleno highlight**: gold left-border row, yellow name + ⭐, `+Pts` shows `⭐ +N`.
+- Empty state: "Aún no hay partidos jugados."
+
+**⚠️ Known limitation — simultaneous matches**: When two matches are live at the same time (e.g. last round of group stage), `liveMatches[0]` is used as `refMatch`. Only one match's predictions are shown. The general ranking is unaffected (all scores are summed correctly). Fix is pending — see git tag `backup-before-dual-match`.
+
+#### Tab: General
+
+- **↕ column**: position change vs ranking before the last finished match. Fetches `scores` for that match, subtracts from each user's `total_points`, re-sorts, diffs positions.
+
+#### Tab: Deudores (`?tab=deudores`)
+
+Two sorted lists — unpaid ("💸 Deben la cuota", amber) and paid ("✅ Al día", emerald). Columns: rank°, name+avatar, notes chip, total pts. Fetches `has_paid` and `notes` from `profiles` via admin client (RLS-restricted fields). Ranks derived from `v_leaderboard_general` index.
 
 ## Removed Features
 
