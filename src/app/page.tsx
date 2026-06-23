@@ -156,7 +156,11 @@ export default async function Home() {
   const finished = (finishedMatches ?? []) as unknown as Match[]
   const upcoming = (upcomingMatches ?? []) as unknown as Match[]
 
-  if (live.length > 0) {
+  if (live.length >= 2) {
+    cards.push({ match: live[0], label: 'En juego' })
+    cards.push({ match: live[1], label: 'En juego' })
+    if (upcoming.length > 0) cards.push({ match: upcoming[0], label: 'Próximo partido' })
+  } else if (live.length === 1) {
     if (finished.length > 0) cards.push({ match: finished[0], label: 'Último jugado' })
     cards.push({ match: live[0], label: 'En juego' })
     if (upcoming.length > 0) cards.push({ match: upcoming[0], label: 'Próximo partido' })

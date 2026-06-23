@@ -155,7 +155,7 @@ export default async function LeaderboardPage({ searchParams }: Props) {
   // Fetch general leaderboard, live match, and last finished match in parallel
   const [{ data: generalData }, { data: liveMatches }, { data: lastFinished }] = await Promise.all([
     supabase.from('v_leaderboard_general').select('*').limit(100),
-    admin.from('matches').select(matchSelect).eq('status', 'live'),
+    admin.from('matches').select(matchSelect).eq('status', 'live').order('match_date'),
     admin
       .from('matches')
       .select(matchSelect)
@@ -166,10 +166,9 @@ export default async function LeaderboardPage({ searchParams }: Props) {
   ])
 
   const leaderboard = generalData ?? []
-  const liveMatch = liveMatches?.[0] ?? null
-  const hasLive = !!liveMatch
+  const hasLive = (liveMatches?.length ?? 0) > 0
   // When no live match, fall back to last finished for the "Partido en Juego" tab
-  const refMatch = liveMatch ?? lastFinished ?? null
+  const refMatches: any[] = hasLive ? (liveMatches ?? []) : (lastFinished ? [lastFinished] : [])
 
   // --- General tab: position change vs last finished match ---
   let prevPositionMap: Record<string, number> = {}
@@ -192,7 +191,7 @@ export default async function LeaderboardPage({ searchParams }: Props) {
     prevRanking.forEach((p, i) => { prevPositionMap[p.id] = i + 1 })
   }
 
-  // --- Live/last-match tab: predictions + scores for refMatch ---
+  // --- Live/last-match tab: predictions + scores per refMatch ---
   type RefPlayer = {
     user_id: string
     display_name: string | null
@@ -205,53 +204,64 @@ export default async function LeaderboardPage({ searchParams }: Props) {
     is_pleno: boolean
     prev_position: number | undefined
   }
-  let refRanking: RefPlayer[] = []
-
-  if (isLiveTab && refMatch) {
-    const [{ data: preds }, { data: matchScores }] = await Promise.all([
-      admin
-        .from('predictions')
-        .select(`
-          user_id, team1_score, team2_score,
-          profile:profiles!predictions_user_id_fkey(display_name, username, avatar_url)
-        `)
-        .eq('match_id', refMatch.id),
-      admin
-        .from('scores')
-        .select('user_id, points, is_pleno')
-        .eq('match_id', refMatch.id),
-    ])
-
-    const totalPtsMap = Object.fromEntries(leaderboard.map(p => [p.id as string, p.total_points as number]))
-    const matchPtsMap = Object.fromEntries((matchScores ?? []).map(s => [s.user_id, s.points as number]))
-    const matchPlenoMap = Object.fromEntries((matchScores ?? []).map(s => [s.user_id, s.is_pleno as boolean]))
-
-    refRanking = ((preds ?? []) as any[])
-      .map(p => ({
-        user_id: p.user_id,
-        display_name: p.profile?.display_name ?? null,
-        username: p.profile?.username ?? null,
-        avatar_url: p.profile?.avatar_url ?? null,
-        total_points: totalPtsMap[p.user_id] ?? 0,
-        pred_team1: p.team1_score as number,
-        pred_team2: p.team2_score as number,
-        match_points: matchPtsMap[p.user_id] ?? null,
-        is_pleno: matchPlenoMap[p.user_id] ?? false,
-        prev_position: undefined as number | undefined,
-      }))
-      .sort((a, b) => b.total_points - a.total_points)
-
-    // Compute previous positions among predictors (before this match)
-    const prevRanking = [...refRanking]
-      .map(p => ({ user_id: p.user_id, pts: p.total_points - (matchPtsMap[p.user_id] ?? 0) }))
-      .sort((a, b) => b.pts - a.pts)
-    const prevPosMap = Object.fromEntries(prevRanking.map((p, i) => [p.user_id, i + 1]))
-
-    refRanking = refRanking.map(p => ({ ...p, prev_position: prevPosMap[p.user_id] }))
+  type RefBlock = {
+    refMatch: any
+    refTeam1: any
+    refTeam2: any
+    refRanking: RefPlayer[]
   }
+  let refBlocks: RefBlock[] = []
 
-  const refTeam1 = refMatch ? (refMatch.team1 as any) : null
-  const refTeam2 = refMatch ? (refMatch.team2 as any) : null
+  if (isLiveTab && refMatches.length > 0) {
+    const totalPtsMap = Object.fromEntries(leaderboard.map(p => [p.id as string, p.total_points as number]))
+
+    refBlocks = await Promise.all(refMatches.map(async (rm) => {
+      const [{ data: preds }, { data: matchScores }] = await Promise.all([
+        admin
+          .from('predictions')
+          .select(`
+            user_id, team1_score, team2_score,
+            profile:profiles!predictions_user_id_fkey(display_name, username, avatar_url)
+          `)
+          .eq('match_id', rm.id),
+        admin
+          .from('scores')
+          .select('user_id, points, is_pleno')
+          .eq('match_id', rm.id),
+      ])
+
+      const matchPtsMap = Object.fromEntries((matchScores ?? []).map(s => [s.user_id, s.points as number]))
+      const matchPlenoMap = Object.fromEntries((matchScores ?? []).map(s => [s.user_id, s.is_pleno as boolean]))
+
+      let ranking: RefPlayer[] = ((preds ?? []) as any[])
+        .map(p => ({
+          user_id: p.user_id,
+          display_name: p.profile?.display_name ?? null,
+          username: p.profile?.username ?? null,
+          avatar_url: p.profile?.avatar_url ?? null,
+          total_points: totalPtsMap[p.user_id] ?? 0,
+          pred_team1: p.team1_score as number,
+          pred_team2: p.team2_score as number,
+          match_points: matchPtsMap[p.user_id] ?? null,
+          is_pleno: matchPlenoMap[p.user_id] ?? false,
+          prev_position: undefined as number | undefined,
+        }))
+        .sort((a, b) => b.total_points - a.total_points)
+
+      const prevRanking = [...ranking]
+        .map(p => ({ user_id: p.user_id, pts: p.total_points - (matchPtsMap[p.user_id] ?? 0) }))
+        .sort((a, b) => b.pts - a.pts)
+      const prevPosMap = Object.fromEntries(prevRanking.map((p, i) => [p.user_id, i + 1]))
+      ranking = ranking.map(p => ({ ...p, prev_position: prevPosMap[p.user_id] }))
+
+      return {
+        refMatch: rm,
+        refTeam1: rm.team1 as any,
+        refTeam2: rm.team2 as any,
+        refRanking: ranking,
+      }
+    }))
+  }
 
   // --- Deudores tab ---
   let sinPagar: PlayerRow[] = []
@@ -345,129 +355,133 @@ export default async function LeaderboardPage({ searchParams }: Props) {
         {isDeudoresTab ? (
           <DeudoresTab sinPagar={sinPagar} conPago={conPago} />
         ) : isLiveTab ? (
-          refMatch ? (
-            <>
-              {/* Score card — live or last finished */}
-              {hasLive ? (
-                <div className="bg-gradient-to-br from-red-500/10 to-white/5 backdrop-blur-sm border border-red-500/20 rounded-2xl p-5 mb-6">
-                  <div className="flex items-center justify-center gap-2 mb-4">
-                    <span className="relative flex h-2 w-2">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500" />
-                    </span>
-                    <span className="text-red-400 text-xs font-semibold tracking-widest uppercase">En Vivo</span>
-                  </div>
-                  <div className="flex items-center justify-center gap-6">
-                    <div className="text-center flex-1">
-                      <div className="text-4xl mb-1">{flag(refTeam1?.code)}</div>
-                      <div className="text-white font-semibold text-sm">{refTeam1?.name ?? 'TBD'}</div>
-                    </div>
-                    <div className="text-center shrink-0">
-                      <div className="text-5xl font-bold text-white tabular-nums">
-                        {refMatch.team1_score ?? 0} – {refMatch.team2_score ?? 0}
+          refBlocks.length > 0 ? (
+            <div className="space-y-8">
+              {refBlocks.map(({ refMatch, refTeam1, refTeam2, refRanking }) => (
+                <div key={refMatch.id}>
+                  {/* Score card — live or last finished */}
+                  {hasLive ? (
+                    <div className="bg-gradient-to-br from-red-500/10 to-white/5 backdrop-blur-sm border border-red-500/20 rounded-2xl p-5 mb-6">
+                      <div className="flex items-center justify-center gap-2 mb-4">
+                        <span className="relative flex h-2 w-2">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500" />
+                        </span>
+                        <span className="text-red-400 text-xs font-semibold tracking-widest uppercase">En Vivo</span>
                       </div>
-                    </div>
-                    <div className="text-center flex-1">
-                      <div className="text-4xl mb-1">{flag(refTeam2?.code)}</div>
-                      <div className="text-white font-semibold text-sm">{refTeam2?.name ?? 'TBD'}</div>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="bg-gradient-to-br from-white/8 to-white/3 backdrop-blur-sm border border-white/15 rounded-2xl p-5 mb-6">
-                  <div className="flex items-center justify-center gap-2 mb-4">
-                    <span className="text-slate-400 text-xs font-semibold tracking-widest uppercase">Último Resultado</span>
-                  </div>
-                  <div className="flex items-center justify-center gap-6">
-                    <div className="text-center flex-1">
-                      <div className="text-4xl mb-1">{flag(refTeam1?.code)}</div>
-                      <div className="text-white font-semibold text-sm">{refTeam1?.name ?? 'TBD'}</div>
-                    </div>
-                    <div className="text-center shrink-0">
-                      <div className="text-5xl font-bold text-white tabular-nums">
-                        {refMatch.team1_score ?? 0} – {refMatch.team2_score ?? 0}
-                      </div>
-                    </div>
-                    <div className="text-center flex-1">
-                      <div className="text-4xl mb-1">{flag(refTeam2?.code)}</div>
-                      <div className="text-white font-semibold text-sm">{refTeam2?.name ?? 'TBD'}</div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Ranking table */}
-              <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden">
-                <div className="grid grid-cols-12 gap-2 p-4 border-b border-white/10 text-slate-400 text-xs font-medium">
-                  <div className="col-span-1 text-center">#</div>
-                  <div className="col-span-3">Jugador</div>
-                  <div className="col-span-2 text-center">Pts</div>
-                  <div className="col-span-2 text-center">Pronóstico</div>
-                  <div className="col-span-2 text-center">+Pts</div>
-                  <div className="col-span-2 text-center">↕</div>
-                </div>
-
-                {refRanking.length > 0 ? (
-                  refRanking.map((player, index) => (
-                    <div
-                      key={player.user_id}
-                      className={`grid grid-cols-12 gap-2 p-3 items-center transition-colors
-                        ${player.is_pleno ? 'bg-gradient-to-r from-yellow-400/10 to-transparent border-l-2 border-yellow-400/60 hover:from-yellow-400/15' : 'hover:bg-white/5'}
-                        ${!player.is_pleno && index === 0 ? 'bg-gradient-to-r from-yellow-500/10 to-transparent' : ''}
-                        ${!player.is_pleno && index === 1 ? 'bg-gradient-to-r from-slate-400/10 to-transparent' : ''}
-                        ${!player.is_pleno && index === 2 ? 'bg-gradient-to-r from-orange-500/10 to-transparent' : ''}
-                        ${index !== refRanking.length - 1 ? 'border-b border-white/5' : ''}`}
-                    >
-                      <div className="col-span-1 text-center">
-                        {index === 0 && <span className="text-xl">🥇</span>}
-                        {index === 1 && <span className="text-xl">🥈</span>}
-                        {index === 2 && <span className="text-xl">🥉</span>}
-                        {index > 2 && <span className="text-slate-500 font-medium text-sm">{index + 1}</span>}
-                      </div>
-                      <div className="col-span-3 flex items-center gap-2 min-w-0">
-                        <Avatar url={player.avatar_url} name={player.display_name || player.username} size={28} />
-                        <div className="flex items-center gap-1 min-w-0">
-                          <span className={`font-medium truncate text-xs ${player.is_pleno ? 'text-yellow-300' : 'text-white'}`}>
-                            {player.display_name || player.username || 'Anónimo'}
-                          </span>
-                          {player.is_pleno && <span className="text-sm shrink-0">⭐</span>}
+                      <div className="flex items-center justify-center gap-6">
+                        <div className="text-center flex-1">
+                          <div className="text-4xl mb-1">{flag(refTeam1?.code)}</div>
+                          <div className="text-white font-semibold text-sm">{refTeam1?.name ?? 'TBD'}</div>
+                        </div>
+                        <div className="text-center shrink-0">
+                          <div className="text-5xl font-bold text-white tabular-nums">
+                            {refMatch.team1_score ?? 0} – {refMatch.team2_score ?? 0}
+                          </div>
+                        </div>
+                        <div className="text-center flex-1">
+                          <div className="text-4xl mb-1">{flag(refTeam2?.code)}</div>
+                          <div className="text-white font-semibold text-sm">{refTeam2?.name ?? 'TBD'}</div>
                         </div>
                       </div>
-                      <div className="col-span-2 text-center text-white font-bold">{player.total_points}</div>
-                      <div className="col-span-2 text-center font-mono text-xs text-slate-300">
-                        {player.pred_team1} – {player.pred_team2}
+                    </div>
+                  ) : (
+                    <div className="bg-gradient-to-br from-white/8 to-white/3 backdrop-blur-sm border border-white/15 rounded-2xl p-5 mb-6">
+                      <div className="flex items-center justify-center gap-2 mb-4">
+                        <span className="text-slate-400 text-xs font-semibold tracking-widest uppercase">Último Resultado</span>
                       </div>
-                      <div className="col-span-2 text-center">
-                        {player.match_points !== null ? (
-                          player.is_pleno ? (
-                            <span className="font-bold text-sm text-yellow-300">⭐ +{player.match_points}</span>
-                          ) : (
-                            <span className={`font-bold text-sm ${player.match_points > 0 ? 'text-emerald-400' : 'text-slate-500'}`}>
-                              +{player.match_points}
-                            </span>
-                          )
-                        ) : (
-                          <span className="text-slate-600 text-sm">—</span>
-                        )}
-                      </div>
-                      <div className="col-span-2 flex justify-center">
-                        <PositionChange current={index + 1} previous={player.prev_position} />
+                      <div className="flex items-center justify-center gap-6">
+                        <div className="text-center flex-1">
+                          <div className="text-4xl mb-1">{flag(refTeam1?.code)}</div>
+                          <div className="text-white font-semibold text-sm">{refTeam1?.name ?? 'TBD'}</div>
+                        </div>
+                        <div className="text-center shrink-0">
+                          <div className="text-5xl font-bold text-white tabular-nums">
+                            {refMatch.team1_score ?? 0} – {refMatch.team2_score ?? 0}
+                          </div>
+                        </div>
+                        <div className="text-center flex-1">
+                          <div className="text-4xl mb-1">{flag(refTeam2?.code)}</div>
+                          <div className="text-white font-semibold text-sm">{refTeam2?.name ?? 'TBD'}</div>
+                        </div>
                       </div>
                     </div>
-                  ))
-                ) : (
-                  <div className="p-10 text-center text-slate-500 text-sm">
-                    Nadie predijo este partido.
-                  </div>
-                )}
-              </div>
+                  )}
 
-              <p className="mt-6 text-center text-slate-500 text-sm">
+                  {/* Ranking table */}
+                  <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden">
+                    <div className="grid grid-cols-12 gap-2 p-4 border-b border-white/10 text-slate-400 text-xs font-medium">
+                      <div className="col-span-1 text-center">#</div>
+                      <div className="col-span-3">Jugador</div>
+                      <div className="col-span-2 text-center">Pts</div>
+                      <div className="col-span-2 text-center">Pronóstico</div>
+                      <div className="col-span-2 text-center">+Pts</div>
+                      <div className="col-span-2 text-center">↕</div>
+                    </div>
+
+                    {refRanking.length > 0 ? (
+                      refRanking.map((player, index) => (
+                        <div
+                          key={player.user_id}
+                          className={`grid grid-cols-12 gap-2 p-3 items-center transition-colors
+                            ${player.is_pleno ? 'bg-gradient-to-r from-yellow-400/10 to-transparent border-l-2 border-yellow-400/60 hover:from-yellow-400/15' : 'hover:bg-white/5'}
+                            ${!player.is_pleno && index === 0 ? 'bg-gradient-to-r from-yellow-500/10 to-transparent' : ''}
+                            ${!player.is_pleno && index === 1 ? 'bg-gradient-to-r from-slate-400/10 to-transparent' : ''}
+                            ${!player.is_pleno && index === 2 ? 'bg-gradient-to-r from-orange-500/10 to-transparent' : ''}
+                            ${index !== refRanking.length - 1 ? 'border-b border-white/5' : ''}`}
+                        >
+                          <div className="col-span-1 text-center">
+                            {index === 0 && <span className="text-xl">🥇</span>}
+                            {index === 1 && <span className="text-xl">🥈</span>}
+                            {index === 2 && <span className="text-xl">🥉</span>}
+                            {index > 2 && <span className="text-slate-500 font-medium text-sm">{index + 1}</span>}
+                          </div>
+                          <div className="col-span-3 flex items-center gap-2 min-w-0">
+                            <Avatar url={player.avatar_url} name={player.display_name || player.username} size={28} />
+                            <div className="flex items-center gap-1 min-w-0">
+                              <span className={`font-medium truncate text-xs ${player.is_pleno ? 'text-yellow-300' : 'text-white'}`}>
+                                {player.display_name || player.username || 'Anónimo'}
+                              </span>
+                              {player.is_pleno && <span className="text-sm shrink-0">⭐</span>}
+                            </div>
+                          </div>
+                          <div className="col-span-2 text-center text-white font-bold">{player.total_points}</div>
+                          <div className="col-span-2 text-center font-mono text-xs text-slate-300">
+                            {player.pred_team1} – {player.pred_team2}
+                          </div>
+                          <div className="col-span-2 text-center">
+                            {player.match_points !== null ? (
+                              player.is_pleno ? (
+                                <span className="font-bold text-sm text-yellow-300">⭐ +{player.match_points}</span>
+                              ) : (
+                                <span className={`font-bold text-sm ${player.match_points > 0 ? 'text-emerald-400' : 'text-slate-500'}`}>
+                                  +{player.match_points}
+                                </span>
+                              )
+                            ) : (
+                              <span className="text-slate-600 text-sm">—</span>
+                            )}
+                          </div>
+                          <div className="col-span-2 flex justify-center">
+                            <PositionChange current={index + 1} previous={player.prev_position} />
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="p-10 text-center text-slate-500 text-sm">
+                        Nadie predijo este partido.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+
+              <p className="text-center text-slate-500 text-sm">
                 {hasLive
-                  ? 'Pts incluye el partido en juego · ↕ vs antes del partido'
+                  ? 'Pts incluye los partidos en juego · ↕ vs antes del partido'
                   : 'Pts totales actuales · ↕ cambio generado por este partido'}
               </p>
-            </>
+            </div>
           ) : (
             <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-sm border border-white/10 rounded-2xl p-12 text-center">
               <div className="text-5xl mb-4">⚽</div>
