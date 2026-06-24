@@ -81,7 +81,7 @@ Three clients in `src/lib/supabase/`:
 
 Each card shows: label + date (top), flag + team name + prediction box (if user predicted), result row with score + pts badge (if live/finished), status badge (bottom). Fetches user scores and predictions server-side.
 
-**⚠️ Known limitation — simultaneous matches**: When two matches are live, only `liveMatches[0]` is shown. Fix is pending — see git tag `backup-before-dual-match`.
+**Simultaneous matches**: when `live.length >= 2`, shows both live cards + next scheduled (drops "last finished" card).
 
 ### Admin API (`/api/admin/match`)
 
@@ -223,7 +223,18 @@ Always visible. Shows live match when one exists; falls back to the **last finis
 - **Pleno highlight**: gold left-border row, yellow name + ⭐, `+Pts` shows `⭐ +N`.
 - Empty state: "Aún no hay partidos jugados."
 
-**⚠️ Known limitation — simultaneous matches**: When two matches are live at the same time (e.g. last round of group stage), `liveMatches[0]` is used as `refMatch`. Only one match's predictions are shown. The general ranking is unaffected (all scores are summed correctly). Fix is pending — see git tag `backup-before-dual-match`.
+**Simultaneous matches (`isDoubleMatch = hasLive && liveMatches.length >= 2`)**:
+
+Activates a combined view instead of per-match blocks:
+- **Two compact score cards** side by side at the top (flag + 3-letter code + live score + pulsing dot).
+- **One unified ranking** sorted by `total_points` (which already includes both live matches via the DB trigger).
+- Each player row has two lines:
+  - Top: `# | avatar + name | total pts | ↕`
+  - Sub-row (grid cols-2, separated by `border-r`): `🏳 N–N 🏳 +pts | 🏳 N–N 🏳 +pts` — one cell per live match.
+- Players who predicted only one of the two matches show `—` on the other.
+- Pleno highlight (gold border + ⭐) triggers if the player has a pleno on **either** match.
+- **↕ column**: position before both live matches started — computed by subtracting `live_points` (sum of points from all live matches) from `total_points`, then re-sorting.
+- Data: single `.in(matchIds)` query for predictions and scores (not per-match round trips).
 
 #### Tab: General
 
