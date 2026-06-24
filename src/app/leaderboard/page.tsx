@@ -191,7 +191,7 @@ export default async function LeaderboardPage({ searchParams }: Props) {
     prevRanking.forEach((p, i) => { prevPositionMap[p.id] = i + 1 })
   }
 
-  // --- Live/last-match tab: predictions + scores per refMatch ---
+  // --- Live/last-match tab: predictions + scores ---
   type RefPlayer = {
     user_id: string
     display_name: string | null
@@ -210,57 +210,132 @@ export default async function LeaderboardPage({ searchParams }: Props) {
     refTeam2: any
     refRanking: RefPlayer[]
   }
-  let refBlocks: RefBlock[] = []
+  type CombinedPred = {
+    match_id: number
+    pred_team1: number
+    pred_team2: number
+    match_points: number | null
+    is_pleno: boolean
+  }
+  type CombinedPlayer = {
+    user_id: string
+    display_name: string | null
+    username: string | null
+    avatar_url: string | null
+    total_points: number
+    live_points: number
+    predictions: CombinedPred[]
+    prev_position: number | undefined
+  }
 
-  if (isLiveTab && refMatches.length > 0) {
+  let refBlocks: RefBlock[] = []
+  let combinedRanking: CombinedPlayer[] = []
+  const isDoubleMatch = hasLive && (liveMatches?.length ?? 0) >= 2
+
+  if (isLiveTab) {
     const totalPtsMap = Object.fromEntries(leaderboard.map(p => [p.id as string, p.total_points as number]))
 
-    refBlocks = await Promise.all(refMatches.map(async (rm) => {
-      const [{ data: preds }, { data: matchScores }] = await Promise.all([
+    if (isDoubleMatch) {
+      // Combined view: single unified ranking for all simultaneous live matches
+      const liveMatchIds = refMatches.map(m => m.id)
+      const [{ data: allPreds }, { data: allScores }] = await Promise.all([
         admin
           .from('predictions')
-          .select(`
-            user_id, team1_score, team2_score,
-            profile:profiles!predictions_user_id_fkey(display_name, username, avatar_url)
-          `)
-          .eq('match_id', rm.id),
+          .select(`user_id, match_id, team1_score, team2_score,
+                   profile:profiles!predictions_user_id_fkey(display_name, username, avatar_url)`)
+          .in('match_id', liveMatchIds),
         admin
           .from('scores')
-          .select('user_id, points, is_pleno')
-          .eq('match_id', rm.id),
+          .select('user_id, match_id, points, is_pleno')
+          .in('match_id', liveMatchIds),
       ])
 
-      const matchPtsMap = Object.fromEntries((matchScores ?? []).map(s => [s.user_id, s.points as number]))
-      const matchPlenoMap = Object.fromEntries((matchScores ?? []).map(s => [s.user_id, s.is_pleno as boolean]))
+      const playerMap: Record<string, CombinedPlayer> = {}
 
-      let ranking: RefPlayer[] = ((preds ?? []) as any[])
-        .map(p => ({
-          user_id: p.user_id,
-          display_name: p.profile?.display_name ?? null,
-          username: p.profile?.username ?? null,
-          avatar_url: p.profile?.avatar_url ?? null,
-          total_points: totalPtsMap[p.user_id] ?? 0,
-          pred_team1: p.team1_score as number,
-          pred_team2: p.team2_score as number,
-          match_points: matchPtsMap[p.user_id] ?? null,
-          is_pleno: matchPlenoMap[p.user_id] ?? false,
-          prev_position: undefined as number | undefined,
-        }))
-        .sort((a, b) => b.total_points - a.total_points)
+      for (const pred of (allPreds ?? []) as any[]) {
+        if (!playerMap[pred.user_id]) {
+          playerMap[pred.user_id] = {
+            user_id: pred.user_id,
+            display_name: pred.profile?.display_name ?? null,
+            username: pred.profile?.username ?? null,
+            avatar_url: pred.profile?.avatar_url ?? null,
+            total_points: totalPtsMap[pred.user_id] ?? 0,
+            live_points: 0,
+            predictions: [],
+            prev_position: undefined,
+          }
+        }
+        playerMap[pred.user_id].predictions.push({
+          match_id: pred.match_id,
+          pred_team1: pred.team1_score as number,
+          pred_team2: pred.team2_score as number,
+          match_points: null,
+          is_pleno: false,
+        })
+      }
+
+      for (const score of (allScores ?? []) as any[]) {
+        const player = playerMap[score.user_id]
+        if (player) {
+          player.live_points += score.points as number
+          const pred = player.predictions.find(p => p.match_id === score.match_id)
+          if (pred) {
+            pred.match_points = score.points as number
+            pred.is_pleno = score.is_pleno as boolean
+          }
+        }
+      }
+
+      let ranking = Object.values(playerMap).sort((a, b) => b.total_points - a.total_points)
 
       const prevRanking = [...ranking]
-        .map(p => ({ user_id: p.user_id, pts: p.total_points - (matchPtsMap[p.user_id] ?? 0) }))
+        .map(p => ({ user_id: p.user_id, pts: p.total_points - p.live_points }))
         .sort((a, b) => b.pts - a.pts)
       const prevPosMap = Object.fromEntries(prevRanking.map((p, i) => [p.user_id, i + 1]))
-      ranking = ranking.map(p => ({ ...p, prev_position: prevPosMap[p.user_id] }))
+      combinedRanking = ranking.map(p => ({ ...p, prev_position: prevPosMap[p.user_id] }))
 
-      return {
-        refMatch: rm,
-        refTeam1: rm.team1 as any,
-        refTeam2: rm.team2 as any,
-        refRanking: ranking,
-      }
-    }))
+    } else if (refMatches.length > 0) {
+      // Single match (live or last finished): per-match block
+      refBlocks = await Promise.all(refMatches.map(async (rm) => {
+        const [{ data: preds }, { data: matchScores }] = await Promise.all([
+          admin
+            .from('predictions')
+            .select(`user_id, team1_score, team2_score,
+                     profile:profiles!predictions_user_id_fkey(display_name, username, avatar_url)`)
+            .eq('match_id', rm.id),
+          admin
+            .from('scores')
+            .select('user_id, points, is_pleno')
+            .eq('match_id', rm.id),
+        ])
+
+        const matchPtsMap = Object.fromEntries((matchScores ?? []).map(s => [s.user_id, s.points as number]))
+        const matchPlenoMap = Object.fromEntries((matchScores ?? []).map(s => [s.user_id, s.is_pleno as boolean]))
+
+        let ranking: RefPlayer[] = ((preds ?? []) as any[])
+          .map(p => ({
+            user_id: p.user_id,
+            display_name: p.profile?.display_name ?? null,
+            username: p.profile?.username ?? null,
+            avatar_url: p.profile?.avatar_url ?? null,
+            total_points: totalPtsMap[p.user_id] ?? 0,
+            pred_team1: p.team1_score as number,
+            pred_team2: p.team2_score as number,
+            match_points: matchPtsMap[p.user_id] ?? null,
+            is_pleno: matchPlenoMap[p.user_id] ?? false,
+            prev_position: undefined as number | undefined,
+          }))
+          .sort((a, b) => b.total_points - a.total_points)
+
+        const prevRanking = [...ranking]
+          .map(p => ({ user_id: p.user_id, pts: p.total_points - (matchPtsMap[p.user_id] ?? 0) }))
+          .sort((a, b) => b.pts - a.pts)
+        const prevPosMap = Object.fromEntries(prevRanking.map((p, i) => [p.user_id, i + 1]))
+        ranking = ranking.map(p => ({ ...p, prev_position: prevPosMap[p.user_id] }))
+
+        return { refMatch: rm, refTeam1: rm.team1 as any, refTeam2: rm.team2 as any, refRanking: ranking }
+      }))
+    }
   }
 
   // --- Deudores tab ---
@@ -355,7 +430,116 @@ export default async function LeaderboardPage({ searchParams }: Props) {
         {isDeudoresTab ? (
           <DeudoresTab sinPagar={sinPagar} conPago={conPago} />
         ) : isLiveTab ? (
-          refBlocks.length > 0 ? (
+          isDoubleMatch ? (
+            /* ── Combined view: two simultaneous live matches ── */
+            <>
+              {/* Two compact score cards side by side */}
+              <div className="grid grid-cols-2 gap-3 mb-6">
+                {refMatches.map(rm => {
+                  const t1 = rm.team1 as any
+                  const t2 = rm.team2 as any
+                  return (
+                    <div key={rm.id} className="bg-gradient-to-br from-red-500/10 to-white/5 border border-red-500/20 rounded-2xl p-3">
+                      <div className="flex items-center justify-center gap-1.5 mb-2">
+                        <span className="relative flex h-1.5 w-1.5">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+                          <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-red-500" />
+                        </span>
+                        <span className="text-red-400 text-[10px] font-semibold tracking-widest uppercase">En Vivo</span>
+                      </div>
+                      <div className="flex items-center justify-center gap-2">
+                        <div className="text-center">
+                          <div className="text-2xl">{flag(t1?.code)}</div>
+                          <div className="text-slate-400 text-[10px] font-medium mt-0.5">{t1?.code}</div>
+                        </div>
+                        <div className="text-lg font-bold text-white tabular-nums px-1">
+                          {rm.team1_score ?? 0}–{rm.team2_score ?? 0}
+                        </div>
+                        <div className="text-center">
+                          <div className="text-2xl">{flag(t2?.code)}</div>
+                          <div className="text-slate-400 text-[10px] font-medium mt-0.5">{t2?.code}</div>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+
+              {/* Unified ranking */}
+              {combinedRanking.length > 0 ? (
+                <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden">
+                  {combinedRanking.map((player, index) => {
+                    const anyPleno = player.predictions.some(p => p.is_pleno)
+                    const rowBg = anyPleno
+                      ? 'bg-gradient-to-r from-yellow-400/10 to-transparent'
+                      : index === 0 ? 'bg-gradient-to-r from-yellow-500/10 to-transparent'
+                      : index === 1 ? 'bg-gradient-to-r from-slate-400/10 to-transparent'
+                      : index === 2 ? 'bg-gradient-to-r from-orange-500/10 to-transparent'
+                      : ''
+                    return (
+                      <div
+                        key={player.user_id}
+                        className={`${rowBg} ${anyPleno ? 'border-l-2 border-yellow-400/60' : ''} ${index !== combinedRanking.length - 1 ? 'border-b border-white/5' : ''}`}
+                      >
+                        {/* Name row */}
+                        <div className="flex items-center gap-2 px-3 pt-2.5 pb-1">
+                          <div className="w-7 text-center shrink-0">
+                            {index === 0 && <span className="text-lg">🥇</span>}
+                            {index === 1 && <span className="text-lg">🥈</span>}
+                            {index === 2 && <span className="text-lg">🥉</span>}
+                            {index > 2 && <span className="text-slate-500 text-sm font-medium">{index + 1}</span>}
+                          </div>
+                          <Avatar url={player.avatar_url} name={player.display_name || player.username} size={26} />
+                          <span className={`flex-1 text-sm font-medium truncate ${anyPleno ? 'text-yellow-300' : 'text-white'}`}>
+                            {player.display_name || player.username || 'Anónimo'}{anyPleno ? ' ⭐' : ''}
+                          </span>
+                          <span className="text-white font-bold text-sm tabular-nums shrink-0">{player.total_points} pts</span>
+                          <div className="w-9 flex justify-center shrink-0">
+                            <PositionChange current={index + 1} previous={player.prev_position} />
+                          </div>
+                        </div>
+                        {/* Prediction sub-rows — side by side */}
+                        <div className="pl-11 pb-2.5 grid grid-cols-2 gap-x-2">
+                          {refMatches.map((rm, mi) => {
+                            const t1 = rm.team1 as any
+                            const t2 = rm.team2 as any
+                            const pred = player.predictions.find(p => p.match_id === rm.id)
+                            return (
+                              <div key={rm.id} className={`flex items-center gap-1 text-xs ${mi === 0 ? 'border-r border-white/10 pr-2' : 'pl-1'}`}>
+                                <span className="text-base leading-none">{flag(t1?.code)}</span>
+                                {pred ? (
+                                  <>
+                                    <span className="font-mono text-slate-200 font-semibold">{pred.pred_team1}–{pred.pred_team2}</span>
+                                    <span className="text-base leading-none">{flag(t2?.code)}</span>
+                                    <span className={`ml-1 font-semibold ${pred.is_pleno ? 'text-yellow-400' : pred.match_points !== null && pred.match_points > 0 ? 'text-emerald-400' : 'text-slate-500'}`}>
+                                      {pred.match_points !== null ? `+${pred.match_points}` : '…'}
+                                    </span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <span className="text-slate-600 font-mono">—</span>
+                                    <span className="text-base leading-none">{flag(t2?.code)}</span>
+                                  </>
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : (
+                <div className="bg-white/5 border border-white/10 rounded-2xl p-10 text-center text-slate-500 text-sm">
+                  Nadie predijo estos partidos.
+                </div>
+              )}
+
+              <p className="mt-6 text-center text-slate-500 text-sm">
+                Pts incluye ambos partidos en juego · ↕ vs antes de los dos partidos
+              </p>
+            </>
+          ) : refBlocks.length > 0 ? (
             <div className="space-y-8">
               {refBlocks.map(({ refMatch, refTeam1, refTeam2, refRanking }) => (
                 <div key={refMatch.id}>
