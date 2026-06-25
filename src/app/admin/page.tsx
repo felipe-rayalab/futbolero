@@ -5,6 +5,7 @@ import Header from '@/components/Header'
 import Avatar from '@/components/Avatar'
 import AdminUsersPanel from './AdminUsersPanel'
 import AdminMatchesPanel from './AdminMatchesPanel'
+import AdminBracketPanel from './AdminBracketPanel'
 import AdminTabs from './AdminTabs'
 
 const ADMIN_EMAIL = 'felipe@rayalab.cl'
@@ -35,6 +36,20 @@ export default async function AdminPage() {
     .from('matches')
     .select('id, phase, match_date, team1_score, team2_score, status, team1:teams!matches_team1_id_fkey(name, code), team2:teams!matches_team2_id_fkey(name, code)')
     .order('match_date', { ascending: true })
+
+  // Pending knockout matches (hidden, waiting for teams to be assigned)
+  const { data: pendingMatches } = await admin
+    .from('matches')
+    .select('id, phase, match_date, team1:teams!matches_team1_id_fkey(id, name, code), team2:teams!matches_team2_id_fkey(id, name, code)')
+    .eq('week_number', 99)
+    .order('match_date', { ascending: true })
+
+  // All real teams (exclude placeholder PD1/PD2)
+  const { data: allTeams } = await admin
+    .from('teams')
+    .select('id, name, code')
+    .not('code', 'like', 'PD%')
+    .order('name', { ascending: true })
 
   // All predictions with user profiles
   const { data: predictions } = await admin
@@ -68,6 +83,12 @@ export default async function AdminPage() {
         <AdminTabs
           jugadores={<AdminUsersPanel profiles={enrichedProfiles} />}
           partidos={<AdminMatchesPanel matches={(matches || []) as any} />}
+          bracket={
+            <AdminBracketPanel
+              pendingMatches={(pendingMatches || []) as any}
+              allTeams={(allTeams || []) as any}
+            />
+          }
           predicciones={
             <div className="space-y-6">
             {(matches || []).map(match => {

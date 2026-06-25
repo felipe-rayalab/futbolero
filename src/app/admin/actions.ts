@@ -47,6 +47,45 @@ export async function updateMatchScore({
   revalidatePath('/play')
 }
 
+export async function publishKnockoutMatch({
+  match_id,
+  team1_code,
+  team2_code,
+}: {
+  match_id: number
+  team1_code: string
+  team2_code: string
+}) {
+  await assertAdmin()
+  const admin = createAdminClient()
+
+  const { data: teams } = await admin
+    .from('teams')
+    .select('id, code')
+    .in('code', [team1_code, team2_code])
+
+  const team1 = teams?.find(t => t.code === team1_code)
+  const team2 = teams?.find(t => t.code === team2_code)
+  if (!team1 || !team2) throw new Error(`Equipo no encontrado: ${!team1 ? team1_code : team2_code}`)
+
+  const { data: match } = await admin.from('matches').select('phase').eq('id', match_id).single()
+  const weekByPhase: Record<string, number> = {
+    round32: 6, round16: 7, quarters: 8, semis: 9, third: 10, final: 11,
+  }
+
+  const { error } = await admin.from('matches').update({
+    team1_id: team1.id,
+    team2_id: team2.id,
+    week_number: weekByPhase[match?.phase ?? ''] ?? 6,
+  }).eq('id', match_id)
+
+  if (error) throw new Error(error.message)
+  revalidatePath('/admin')
+  revalidatePath('/')
+  revalidatePath('/play')
+  revalidatePath('/leaderboard')
+}
+
 export async function recalculateMatchScores(match_id: number) {
   await assertAdmin()
   const admin = createAdminClient()
