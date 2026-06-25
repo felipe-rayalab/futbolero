@@ -103,8 +103,9 @@ Protected by hardcoded `ADMIN_EMAIL` in `src/app/admin/page.tsx`. Three tabs (de
   - Uses `updateMatchScore` / `recalculateMatchScores` Server Actions in `actions.ts`; revalidates `/admin`, `/`, `/leaderboard`, `/play`.
 - **Jugadores** (`AdminUsersPanel.tsx`) — lists all users with email, avatar, `has_paid` toggle, and inline-editable `notes` field. Uses `togglePaid` / `updateNotes` Server Actions.
 - **Predicciones** — read-only match-by-match view of all predictions with Pleno / Ganador / Error badges.
+- **Bracket** (`AdminBracketPanel.tsx`) — publish knockout matches as the bracket is revealed. Shows all hidden matches (`week_number = 99`) grouped by phase. Per match: two team dropdowns (all real teams, PD placeholders excluded) + **Publicar** button. On publish, calls `publishKnockoutMatch` server action which sets `team1_id`, `team2_id`, and `week_number` (round32=6, round16=7, quarters=8, semis=9, third=10, final=11) — match appears immediately in `/play`. Repeat per cruce as the bracket fills in.
 
-Client component: `AdminTabs.tsx` (tab switcher). Server Actions in `src/app/admin/actions.ts` call `revalidatePath('/admin')` after each mutation.
+Client component: `AdminTabs.tsx` (tab switcher, 4 tabs). Server Actions in `src/app/admin/actions.ts` call `revalidatePath('/admin')` after each mutation.
 
 ### Database (Supabase/PostgreSQL)
 
@@ -166,6 +167,17 @@ The route (`src/app/api/cron/update-scores/route.ts`):
 `teams.code` must match football-data.org TLA codes exactly. When they don't, add an override to `FD_TLA_OVERRIDES` in `src/lib/football-api.ts` (e.g. `BAY → FCB` for Bayern) — never rename the DB code to match the API. The flag emoji map also lives in `src/app/play/[id]/page.tsx` and must be updated when adding new teams.
 
 API token: in `FOOTBALL_DATA_API_KEY` env var (also in memory `project_infra.md`).
+
+### Knockout bracket flow
+
+All 32 knockout matches (round32 → final) were pre-inserted in migration `014_wc_knockout_placeholders.sql` with `week_number = 99` (hidden) and placeholder teams `PD1`/`PD2`. The `.neq('week_number', 99)` filter in `/play`, home page, and all queries keeps them invisible until published.
+
+**To publish a cruce as the bracket is defined:**
+1. Admin → tab **Bracket**
+2. Select both teams from the dropdown → click **Publicar**
+3. Match appears immediately in `/play` under the correct phase tab
+
+The scoring function (`calculate_match_points`) already handles all phases with the correct multipliers — no further changes needed when knockout rounds start.
 
 ### Play page (`/play`) — layout
 
