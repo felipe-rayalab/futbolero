@@ -27,12 +27,11 @@ export async function POST(req: NextRequest) {
 
   const supabase = createAdminClient()
 
-  // Update match
+  // Build update — always include scores if provided so the DB trigger
+  // recalculates points for live score changes too
   const update: Record<string, unknown> = { status }
-  if (status === 'finished') {
-    update.team1_score = team1_score
-    update.team2_score = team2_score
-  }
+  if (team1_score != null) update.team1_score = team1_score
+  if (team2_score != null) update.team2_score = team2_score
 
   const { error: matchError } = await supabase
     .from('matches')
@@ -43,19 +42,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: matchError.message }, { status: 500 })
   }
 
-  // Calculate scores when finishing a match
-  if (status === 'finished') {
-    const { data, error: scoreError } = await supabase
-      .rpc('calculate_and_save_scores', { p_match_id: match_id })
-
-    if (scoreError) {
-      return NextResponse.json({ error: scoreError.message }, { status: 500 })
-    }
-
-    return NextResponse.json({ ok: true, status, scores_calculated: data })
-  }
-
-  return NextResponse.json({ ok: true, status })
+  return NextResponse.json({ ok: true, status, team1_score: team1_score ?? null, team2_score: team2_score ?? null })
 }
 
 // GET /api/admin/match?id=X — ver estado actual de un partido

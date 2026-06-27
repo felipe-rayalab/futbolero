@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useTransition } from 'react'
-import { updateMatchScore, recalculateMatchScores } from './actions'
+import { updateMatchScore, recalculateMatchScores, correctMatchScore } from './actions'
 
 type Team = { name: string; code: string }
 type Match = {
@@ -20,16 +20,22 @@ function getRelevantMatches(matches: Match[]) {
   return matches
     .filter(m => {
       if (m.status === 'live') return true
+      if (m.status === 'finished') return true
       const date = new Date(m.match_date)
       const hoursUntil = (date.getTime() - now.getTime()) / 3600000
-      const hoursAgo = -hoursUntil
-      if (m.status !== 'finished' && hoursUntil < 48) return true
-      if (m.status === 'finished' && hoursAgo < 24) return true
+      if (hoursUntil < 48) return true
       return false
     })
     .sort((a, b) => {
       if (a.status === 'live' && b.status !== 'live') return -1
       if (b.status === 'live' && a.status !== 'live') return 1
+      // upcoming before finished
+      if (a.status !== 'finished' && b.status === 'finished') return -1
+      if (a.status === 'finished' && b.status !== 'finished') return 1
+      // within same group: upcoming asc, finished desc (newest first)
+      if (a.status === 'finished') {
+        return new Date(b.match_date).getTime() - new Date(a.match_date).getTime()
+      }
       return new Date(a.match_date).getTime() - new Date(b.match_date).getTime()
     })
 }
@@ -139,8 +145,7 @@ export default function AdminMatchesPanel({ matches }: { matches: Match[] }) {
                   max="20"
                   value={s.t1}
                   onChange={e => setScores(prev => ({ ...prev, [match.id]: { ...s, t1: e.target.value } }))}
-                  disabled={isFinished}
-                  className="w-14 h-12 text-center text-2xl font-bold bg-white/10 border border-white/20 rounded-xl text-white disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus:border-emerald-400/50 focus:bg-white/15"
+                  className="w-14 h-12 text-center text-2xl font-bold bg-white/10 border border-white/20 rounded-xl text-white focus:outline-none focus:border-emerald-400/50 focus:bg-white/15"
                 />
                 <span className="text-slate-500 font-bold text-xl">–</span>
                 <input
@@ -149,8 +154,7 @@ export default function AdminMatchesPanel({ matches }: { matches: Match[] }) {
                   max="20"
                   value={s.t2}
                   onChange={e => setScores(prev => ({ ...prev, [match.id]: { ...s, t2: e.target.value } }))}
-                  disabled={isFinished}
-                  className="w-14 h-12 text-center text-2xl font-bold bg-white/10 border border-white/20 rounded-xl text-white disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus:border-emerald-400/50 focus:bg-white/15"
+                  className="w-14 h-12 text-center text-2xl font-bold bg-white/10 border border-white/20 rounded-xl text-white focus:outline-none focus:border-emerald-400/50 focus:bg-white/15"
                 />
               </div>
               <span className="flex-1 text-left text-slate-300 text-sm font-medium truncate">{t2?.name}</span>
@@ -177,14 +181,18 @@ export default function AdminMatchesPanel({ matches }: { matches: Match[] }) {
             )}
 
             {isFinished && (
-              <div className="flex items-center justify-between">
-                <p className="text-slate-500 text-sm">
-                  ✓ Resultado final — {match.team1_score} – {match.team2_score}
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-slate-500 text-sm shrink-0">
+                  Guardado: {match.team1_score} – {match.team2_score}
                 </p>
                 <button
                   onClick={() => {
                     startTransition(async () => {
-                      await recalculateMatchScores(match.id)
+                      await correctMatchScore({
+                        match_id: match.id,
+                        team1_score: parseInt(s.t1) || 0,
+                        team2_score: parseInt(s.t2) || 0,
+                      })
                       setLastUpdated(prev => ({
                         ...prev,
                         [match.id]: new Date().toLocaleTimeString('es-CL', {
@@ -196,7 +204,7 @@ export default function AdminMatchesPanel({ matches }: { matches: Match[] }) {
                   disabled={isPending}
                   className="text-xs px-3 py-1.5 rounded-lg bg-orange-500/15 text-orange-400 border border-orange-500/20 hover:bg-orange-500/25 transition-colors disabled:opacity-50"
                 >
-                  🔁 Recalcular pts
+                  🔁 Corregir y recalcular
                 </button>
               </div>
             )}

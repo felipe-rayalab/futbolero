@@ -86,6 +86,23 @@ export async function publishKnockoutMatch({
   revalidatePath('/leaderboard')
 }
 
+export async function correctMatchScore({
+  match_id, team1_score, team2_score,
+}: {
+  match_id: number
+  team1_score: number
+  team2_score: number
+}) {
+  await assertAdmin()
+  const admin = createAdminClient()
+  await admin.from('matches').update({ team1_score, team2_score }).eq('id', match_id)
+  await admin.rpc('calculate_and_save_scores', { p_match_id: match_id })
+  revalidatePath('/admin')
+  revalidatePath('/')
+  revalidatePath('/leaderboard')
+  revalidatePath('/play')
+}
+
 export async function recalculateMatchScores(match_id: number) {
   await assertAdmin()
   const admin = createAdminClient()
