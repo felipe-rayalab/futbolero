@@ -16,15 +16,13 @@ type Match = {
 }
 
 function getRelevantMatches(matches: Match[]) {
-  const now = new Date()
   return matches
     .filter(m => {
-      if (m.status === 'live') return true
-      if (m.status === 'finished') return true
-      const date = new Date(m.match_date)
-      const hoursUntil = (date.getTime() - now.getTime()) / 3600000
-      if (hoursUntil < 48) return true
-      return false
+      if (m.status === 'live' || m.status === 'finished') return true
+      // show all scheduled knockout matches; for groups only upcoming ones
+      if (m.phase !== 'groups') return true
+      const hoursUntil = (new Date(m.match_date).getTime() - Date.now()) / 3600000
+      return hoursUntil < 48
     })
     .sort((a, b) => {
       if (a.status === 'live' && b.status !== 'live') return -1
